@@ -1,0 +1,112 @@
+.container {
+    margin-bottom: 1.25rem;
+  }
+  
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #fef3c7;
+  }
+  
+  .addButton {
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    color: white;
+    border: none;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .addButton:hover {
+    background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+    transform: translateY(-1px);
+  }
+  
+  .emptyMessage {
+    text-align: center;
+    padding: 1rem;
+    background-color: rgba(120, 53, 15, 0.3);
+    border-radius: 0.5rem;
+    color: #fde68a;
+    font-size: 0.875rem;
+  }
+  
+  .contactRow {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  
+  .platformSelect {
+    padding: 0.5rem;
+    border: 1px solid #b45309;
+    border-radius: 0.5rem;
+    background-color: #fffbeb;
+    color: #1f2937;
+    font-size: 0.875rem;
+    cursor: pointer;
+    min-width: 120px;
+  }
+  
+  .platformSelect:focus {
+    outline: none;
+    border-color: #f59e0b;
+  }
+  
+  .contactInput {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #b45309;
+    border-radius: 0.5rem;
+    background-color: #fffbeb;
+    color: #1f2937;
+    font-size: 0.875rem;
+  }
+  
+  .contactInput:focus {
+    outline: none;
+    border-color: #f59e0b;
+  }
+  
+  .removeButton {
+    background-color: #dc2626;
+    color: white;
+    border: none;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: background-color 0.2s;
+  }
+  
+  .removeButton:hover {
+    background-color: #b91c1c;
+  }
+  
+  @media (max-width: 640px) {
+    .contactRow {
+      flex-direction: column;
+    }
+    
+    .platformSelect {
+      width: 100%;
+    }
+    
+    .contactInput {
+      width: 100%;
+    }
+  }

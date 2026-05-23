@@ -1,0 +1,195 @@
+/* Copy từ page.module.css của tournaments/create */
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80vh;
+    padding: 2rem;
+  }
+  
+  .formCard {
+    max-width: 800px;
+    width: 100%;
+    background: linear-gradient(135deg, rgba(120, 53, 15, 0.4) 0%, rgba(69, 26, 3, 0.4) 100%);
+    backdrop-filter: blur(10px);
+    border-radius: 1rem;
+    padding: 2rem;
+    box-shadow: 0 20px 35px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(245, 158, 11, 0.6);
+  }
+  
+  .title {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #fde68a;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+  
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+  
+  .formRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  
+  .formGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #fef3c7;
+  }
+  
+  .required {
+    color: #ef4444;
+    margin-left: 0.25rem;
+  }
+  
+  .input, .textarea {
+    padding: 0.625rem 0.875rem;
+    border: 1px solid #b45309;
+    border-radius: 0.5rem;
+    background-color: #fffbeb;
+    color: #1f2937;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+  }
+  
+  .input:focus, .textarea:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  }
+  
+  .textarea {
+    resize: vertical;
+    min-height: 100px;
+  }
+  
+  .errorText {
+    font-size: 0.75rem;
+    color: #ef4444;
+  }
+  
+  .fileInput {
+    padding: 0.5rem;
+    border: 1px solid #b45309;
+    border-radius: 0.5rem;
+    background-color: #fffbeb;
+    cursor: pointer;
+  }
+  
+  .fileInput::file-selector-button {
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    color: white;
+    border: none;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    margin-right: 0.75rem;
+  }
+  
+  .uploadingText {
+    font-size: 0.75rem;
+    color: #fde68a;
+    margin-top: 0.25rem;
+  }
+  
+  .imagePreview {
+    margin-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  
+  .previewImage {
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 0.5rem;
+    border: 2px solid #b45309;
+  }
+  
+  .removeImageButton {
+    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    color: white;
+    border: none;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+  }
+  
+  .buttonGroup {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+  }
+  
+  .cancelBtn {
+    padding: 0.625rem 1.25rem;
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .cancelBtn:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    transform: translateY(-1px);
+  }
+  
+  .submitBtn {
+    padding: 0.625rem 1.25rem;
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .submitBtn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+    transform: translateY(-1px);
+  }
+  
+  .submitBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  @media (max-width: 640px) {
+    .container {
+      padding: 1rem;
+    }
+    .formCard {
+      padding: 1.5rem;
+    }
+    .formRow {
+      grid-template-columns: 1fr;
+    }
+    .buttonGroup {
+      flex-direction: column;
+    }
+    .cancelBtn, .submitBtn {
+      width: 100%;
+      text-align: center;
+    }
+  }

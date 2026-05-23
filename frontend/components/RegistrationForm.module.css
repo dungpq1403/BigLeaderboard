@@ -1,0 +1,383 @@
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 80vh;
+    padding: 2rem;
+  }
+
+  /* Thêm vào đầu file */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.autoFillButton {
+  background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.autoFillButton:hover:not(:disabled) {
+  background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+  transform: translateY(-1px);
+}
+
+.autoFillButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Thêm style cho select */
+.select {
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #b45309;
+  border-radius: 0.5rem;
+  background-color: #fffbeb;
+  color: #1f2937;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  width: 100%;
+  cursor: pointer;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+  
+  .formCard {
+    max-width: 800px;
+    width: 100%;
+    background: linear-gradient(135deg, rgba(120, 53, 15, 0.4) 0%, rgba(69, 26, 3, 0.4) 100%);
+    backdrop-filter: blur(10px);
+    border-radius: 1rem;
+    padding: 2rem;
+    box-shadow: 0 20px 35px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(245, 158, 11, 0.6);
+  }
+  
+  .title {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #fef3c7;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+  
+  .tournamentInfo {
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.2) 100%);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  
+  .tournamentHeader {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  
+  .tournamentImage {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 0.5rem;
+  }
+  
+  .tournamentDetails {
+    flex: 1;
+  }
+  
+  .tournamentName {
+    font-size: 1.125rem;
+    font-weight: bold;
+    color: #fef3c7;
+    margin-bottom: 0.5rem;
+  }
+  
+  .tournamentMeta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+  }
+  
+  .tournamentFormats {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+  }
+  
+  .formatBadge {
+    background: linear-gradient(135deg, rgba(180, 83, 9, 0.6) 0%, rgba(120, 53, 15, 0.6) 100%);
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.7rem;
+    color: #fde68a;
+  }
+  
+  .tournamentStats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.7rem;
+    color: #fde68a;
+  }
+  
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .formRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  
+  .formGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #fef3c7;
+  }
+  
+  .required {
+    color: #ef4444;
+    margin-left: 0.25rem;
+  }
+  
+  .input,
+  .select {
+    padding: 0.625rem 0.875rem;
+    border: 1px solid #b45309;
+    border-radius: 0.5rem;
+    background-color: #fffbeb;
+    color: #1f2937;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+  }
+  
+  .input:focus,
+  .select:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  }
+  
+  .errorText {
+    font-size: 0.75rem;
+    color: #ef4444;
+  }
+  
+  .buttonGroup {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+  }
+  
+  .cancelButton {
+    padding: 0.625rem 1.25rem;
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .cancelButton:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    transform: translateY(-1px);
+  }
+  
+  .submitButton {
+    padding: 0.625rem 1.25rem;
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .submitButton:hover:not(:disabled) {
+    background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+    transform: translateY(-1px);
+  }
+  
+  .submitButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  @media (max-width: 640px) {
+    .container {
+      padding: 1rem;
+    }
+    
+    .formCard {
+      padding: 1.5rem;
+    }
+    
+    .formRow {
+      grid-template-columns: 1fr;
+    }
+    
+    .tournamentHeader {
+      flex-direction: column;
+    }
+    
+    .tournamentImage {
+      width: 100%;
+      height: 120px;
+    }
+    
+    .buttonGroup {
+      flex-direction: column;
+    }
+    
+    .cancelButton,
+    .submitButton {
+      width: 100%;
+      text-align: center;
+    }
+  }
+
+  .teamSection {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 100%);
+    border-radius: 0.75rem;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  
+  .sectionSubtitle {
+    font-size: 1rem;
+    font-weight: bold;
+    color: #fde68a;
+    margin-bottom: 0.25rem;
+  }
+  
+  .sectionHint {
+    font-size: 0.7rem;
+    color: #fcd34d;
+    margin-bottom: 1rem;
+  }
+  
+  .optional {
+    font-size: 0.7rem;
+    color: #fde68a;
+    font-weight: normal;
+  }
+  
+  .memberCard {
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.2) 100%);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-left: 3px solid #f59e0b;
+  }
+  
+  .memberHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .memberBadge {
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+  }
+  
+  .memberBadgeSub {
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+  }
+  
+  .removeMemberBtn {
+    background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+    color: white;
+    border: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.375rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .removeMemberBtn:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  }
+  
+  .substitutesHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+  
+  .addSubstituteBtn {
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    color: white;
+    border: none;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .addSubstituteBtn:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+  }
+  
+  .teamInfoBadge {
+    margin-top: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    background: rgba(245, 158, 11, 0.2);
+    border-radius: 0.5rem;
+    font-size: 0.7rem;
+    color: #fcd34d;
+    display: inline-block;
+  }

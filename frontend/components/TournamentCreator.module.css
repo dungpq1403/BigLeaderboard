@@ -1,0 +1,81 @@
+/* Badge variant */
+.badgeLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    color: #fde68a;
+    background-color: rgba(120, 53, 15, 0.5);
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+  
+  .badgeLink:hover {
+    background-color: rgba(180, 83, 9, 0.5);
+    color: #fef3c7;
+    transform: translateY(-1px);
+  }
+  
+  .badgeIcon {
+    font-size: 0.65rem;
+  }
+  
+  /* Text variant */
+  .textLink {
+    font-size: 0.75rem;
+    color: #fde68a;
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  
+  .textLink:hover {
+    color: #fcd34d;
+    text-decoration: underline;
+  }
+  
+  /* Avatar variant */
+  .avatarLink {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+  
+  .avatarLink:hover {
+    transform: translateY(-1px);
+  }
+  
+  .avatarImage {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #b45309;
+  }
+  
+  .avatarPlaceholder {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: bold;
+    color: white;
+    border: 2px solid #fcd34d;
+  }
+  
+  .avatarName {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #fef3c7;
+  }
+  
+  .avatarLink:hover .avatarName {
+    color: #fcd34d;
+  }

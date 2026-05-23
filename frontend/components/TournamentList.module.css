@@ -1,0 +1,189 @@
+.loading {
+  text-align: center;
+  color: #fde68a;
+  padding: 2rem;
+}
+
+.noTournaments {
+  text-align: center;
+  color: #fde68a;
+  padding: 2rem;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.3) 0%, rgba(69, 26, 3, 0.3) 100%);
+  backdrop-filter: blur(4px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+}
+
+.tournamentGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.tournamentCard {
+  display: flex;
+  gap: 1rem;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.4) 0%, rgba(69, 26, 3, 0.4) 100%);
+  backdrop-filter: blur(4px);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+  align-items: center;
+  cursor: pointer;
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3), inset 0 0 4px rgba(245, 158, 11, 0.2);
+}
+
+.tournamentCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.tournamentImage {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+}
+
+.tournamentInfo {
+  flex: 1;
+}
+
+.tournamentHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.tournamentName {
+  font-size: 1.125rem;
+  font-weight: bold;
+  color: #fef3c7;
+  margin: 0;
+}
+
+.tournamentFormats {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.formatBadge {
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.6) 0%, rgba(120, 53, 15, 0.6) 100%);
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.7rem;
+  color: #fde68a;
+}
+
+.tournamentStats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.tournamentDate {
+  font-size: 0.75rem;
+  color: #fde68a;
+}
+
+.tournamentParticipants {
+  font-size: 0.75rem;
+  color: #fcd34d;
+}
+
+.tournamentPrize {
+  font-size: 0.75rem;
+  color: #fcd34d;
+  font-weight: bold;
+}
+
+@media (max-width: 768px) {
+  .tournamentCard {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .tournamentImage {
+    width: 100%;
+    height: 120px;
+  }
+}
+
+/* Thay thế .registerButtonWrapper bằng .actionButtons */
+
+.actionButtons {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.registerButton {
+  background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.registerButton:hover {
+  background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 768px) {
+  .actionButtons {
+    margin-top: 0.5rem;
+    width: 100%;
+  }
+  
+  .registerButton {
+    flex: 1;
+  }
+}
+
+.registerButton {
+  background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+  color: white;
+  border: none;
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.registerButton:hover {
+  background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.registerButton:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 768px) {
+  .registerButtonWrapper {
+    margin-top: 0.5rem;
+  }
+  
+  .registerButton {
+    width: 100%;
+  }
+}

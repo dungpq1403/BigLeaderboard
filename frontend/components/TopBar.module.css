@@ -1,0 +1,188 @@
+@reference "tailwindcss";
+
+.topBar {
+  @apply bg-amber-900 text-white px-6 py-4 flex justify-between items-center shadow-md;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 50;
+}
+
+.brand {
+  @apply text-2xl font-bold;
+}
+
+/* Search Section */
+.searchContainer {
+  @apply flex-1 max-w-lg mx-6;
+}
+
+.searchForm {
+  @apply relative;
+}
+
+.searchInput {
+  @apply w-full px-5 py-3 rounded-xl bg-amber-700 text-white placeholder-white
+         border-2 border-amber-600 focus:outline-none focus:border-amber-400
+         transition duration-200 text-base shadow-sm; 
+}
+
+.searchInput::placeholder {
+  @apply text-white
+}
+
+.searchButton {
+  @apply absolute right-3 top-1/2 transform -translate-y-1/2 
+         text-amber-700 hover:text-amber-900 transition duration-200 text-lg;
+}
+
+/* Right Section */
+.rightSection {
+  @apply flex items-center gap-4;
+}
+
+.loginBtn {
+  @apply bg-white text-amber-900 hover:bg-gray-100 font-semibold py-2 px-4 rounded-lg transition duration-200;
+}
+
+.userInfo {
+  @apply relative flex items-center gap-3 px-3 py-2 rounded-xl;
+}
+
+.userInfoWrapper {
+  @apply flex items-center gap-3 bg-amber-800/40 px-3 py-2 rounded-xl cursor-pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.userInfoWrapper:hover {
+  transform: scale(1.05);
+  box-shadow: 0 20px 30px rgba(0, 0, 0, 0.3);
+}
+
+.welcomeText {
+  @apply text-sm font-semibold text-white;
+}
+
+.avatar {
+  @apply inline-flex items-center justify-center w-9 h-9 rounded-full bg-white text-amber-900 text-base;
+}
+
+/* Dropdown menu */
+.dropdown {
+  @apply absolute right-0 top-full mt-2 w-48 bg-amber-800 rounded-lg shadow-lg overflow-hidden z-50;
+}
+
+.dropdownItem {
+  @apply block w-full text-left px-4 py-2 text-sm text-white hover:bg-amber-700 transition duration-150;
+  cursor: pointer;
+}
+
+.dropdownDivider {
+  @apply border-t border-gray-200 my-1;
+}
+
+/* Search Results Dropdown */
+.searchResults {
+  @apply absolute top-full left-0 right-0 mt-2 rounded-lg shadow-lg max-h-96 overflow-y-auto z-50;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.95) 0%, rgba(69, 26, 3, 0.95) 100%);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3), inset 0 0 4px rgba(245, 158, 11, 0.2);
+}
+
+.searchResultItem {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 1px solid rgba(180, 83, 9, 0.3);
+}
+
+.searchResultItem:hover {
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.6) 0%, rgba(120, 53, 15, 0.6) 100%);
+  transform: translateY(2px);
+}
+
+.searchResultItem:last-child {
+  border-bottom: none;
+}
+
+.searchResultImage {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  flex-shrink: 0;
+  border: 1px solid rgba(180, 83, 9, 0.5);
+}
+
+.searchResultInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.searchResultHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+
+.searchResultName {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fef3c7;
+}
+
+.searchResultFormats {
+  display: flex;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.searchResultFormatBadge {
+  background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.65rem;
+  color: #fef3c7;
+  font-weight: 500;
+}
+
+.searchResultStats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.searchResultDate,
+.searchResultParticipants,
+.searchResultPrize {
+  font-size: 0.7rem;
+  color: #fde68a;
+}
+
+.searchResultPrize {
+  font-weight: 600;
+  color: #fcd34d;
+}
+
+/* Loading state */
+.loadingAvatar {
+  @apply inline-flex items-center justify-center w-9 h-9 rounded-full bg-amber-700 text-amber-200 text-base;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

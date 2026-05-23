@@ -1,0 +1,29 @@
+.badgeStatus {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  
+  .upcoming {
+    background-color: #3b82f6;
+    color: white;
+  }
+  
+  .ongoing {
+    background-color: #10b981;
+    color: white;
+  }
+  
+  .ended {
+    background-color: #6b7280;
+    color: white;
+  }
+  
+  .textStatus {
+    font-size: 0.7rem;
+    font-weight: 500;
+  }

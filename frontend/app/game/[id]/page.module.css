@@ -1,0 +1,134 @@
+.container {
+    max-width: 72rem;
+    margin-left: auto;
+    margin-right: auto;
+    position: relative;
+  }
+
+/* Phần còn lại giữ nguyên */
+.singleCard {
+  background-color: rgba(120, 53, 15, 0.4);
+  backdrop-filter: blur(4px);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.cardTitle {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #fde68a;
+  margin-bottom: 1rem;
+}
+  
+  /* Header Section */
+  .header {
+    position: relative;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+  
+  .headerBackground {
+    position: fixed;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    opacity: 0.2;
+    border-radius: 0.75rem
+  }
+  
+  .headerContent {
+    position: relative;
+    padding: 2rem;
+    background: linear-gradient(to right, rgba(120, 53, 15, 0.9) 0%, rgba(120, 53, 15, 0.9) 100%);
+    margin-top: 60px;
+    border-radius: 0.75rem
+  }
+  
+  .gameInfoRow {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    align-items: center;
+  }
+  
+  @media (min-width: 768px) {
+    .gameInfoRow {
+      flex-direction: row;
+      align-items: flex-start;
+    }
+  }
+  
+  .gameTitleWrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  
+  @media (min-width: 768px) {
+    .gameImageWrapper {
+      width: 16rem;
+    }
+  }
+  
+  .gameImage {
+    width: 100%;
+    height: auto;
+  }
+  
+  .gameDetails {
+    flex: 1;
+    text-align: center;
+  }
+  
+  @media (min-width: 768px) {
+    .gameDetails {
+      text-align: left;
+    }
+  }
+  
+  .gameTitle {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #fef3c7;
+    margin-bottom: 0.5rem;
+  }
+  
+  @media (min-width: 768px) {
+    .gameTitle {
+      font-size: 3rem;
+    }
+  }
+  
+  .genreList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+  
+  @media (min-width: 768px) {
+    .genreList {
+      justify-content: flex-start;
+    }
+  }
+  
+  .genreTag {
+    background-color: rgba(180, 83, 9, 0.5);
+    color: #fef3c7;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+  }
+  
+  .statsList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    color: #fde68a;
+  }

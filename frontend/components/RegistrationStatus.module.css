@@ -1,0 +1,89 @@
+.badgeStatus {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  
+  .not_registered {
+    background-color: #6b7280;
+    color: white;
+  }
+  
+  .registered {
+    background-color: #10b981;
+    color: white;
+  }
+  
+  .pending {
+    background-color: #f59e0b;
+    color: white;
+  }
+  
+  .cancelled {
+    background-color: #ef4444;
+    color: white;
+  }
+  
+  .textStatus {
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+  
+  .buttonStatus {
+    padding: 0.5rem 1.25rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+  }
+  
+  .buttonStatus.not_registered {
+    background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+    color: white;
+  }
+  
+  .buttonStatus.not_registered:hover {
+    background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+    transform: translateY(-1px);
+  }
+  
+  .buttonStatus.registered {
+    background-color: #10b981;
+    color: white;
+    cursor: default;
+  }
+  
+  .buttonStatus.pending {
+    background-color: #f59e0b;
+    color: white;
+    cursor: default;
+  }
+  
+  .buttonStatus.cancelled {
+    background-color: #ef4444;
+    color: white;
+    cursor: default;
+  }
+
+  /* Thêm vào cuối file */
+.buttonStatus.cancelButton {
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  color: white;
+  cursor: pointer;
+}
+
+.buttonStatus.cancelButton:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  transform: translateY(-1px);
+}
+
+.buttonStatus.cancelButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

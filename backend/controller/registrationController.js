@@ -162,7 +162,7 @@ const registrationController = {
           email: normalizedEmail,
           country,
           participantType: 'person',
-          status: 'pending',
+          status: 'approved',
           registeredAt: new Date(),
         });
         
@@ -357,7 +357,7 @@ const registrationController = {
             phone: s.phone ? s.phone.replace(/[^0-9]/g, '') : '',
             country: s.country || '',
           })) : [],
-          status: 'pending',
+          status: 'approved',
           registeredAt: new Date(),
         });
         

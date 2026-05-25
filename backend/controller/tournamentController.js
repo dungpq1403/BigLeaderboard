@@ -94,7 +94,7 @@ const tournamentController = {
       const { 
         name, formats, startDate, endDate, maxParticipants, 
         participantType, prize, description, imageUrl, gameId, contacts,
-        advancementSteps, groupColumns, teamMembers, teamSubstitutes    // thay advancementCount bằng advancementSteps
+        advancementSteps, groupColumns, teamMembers, teamSubstitutes, thirdPlaceMatch // thay advancementCount bằng advancementSteps
       } = req.body;
       
       // Validation cơ bản
@@ -134,6 +134,7 @@ const tournamentController = {
         groupColumns: groupColumns || null,
         teamMembers: teamMembers || null,
         teamSubstitutes: teamSubstitutes || null,
+        thirdPlaceMatch: thirdPlaceMatch || false,
       });
 
       // Xử lý contacts như cũ
@@ -251,6 +252,7 @@ const tournamentController = {
         groupColumns,
         teamMembers,
         teamSubstitutes,
+        thirdPlaceMatch,
       } = req.body;
   
       // Tìm giải đấu
@@ -296,6 +298,7 @@ const tournamentController = {
         groupColumns: groupColumns !== undefined ? groupColumns : tournament.groupColumns,
         teamMembers: teamMembers !== undefined ? teamMembers : tournament.teamMembers,
         teamSubstitutes: teamSubstitutes !== undefined ? teamSubstitutes : tournament.teamSubstitutes,
+        thirdPlaceMatch: thirdPlaceMatch !== undefined ? thirdPlaceMatch : tournament.thirdPlaceMatch,
       });
   
       // Cập nhật contacts (xóa cũ, thêm mới)

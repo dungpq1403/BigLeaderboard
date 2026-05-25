@@ -57,7 +57,7 @@ const Registration = sequelize.define(
       allowNull: false,
     },
     status: {
-      type: DataTypes.ENUM('pending', 'approved', 'rejected', 'cancelled'),
+      type: DataTypes.ENUM('approved', 'cancelled'),
       allowNull: false,
       defaultValue: 'pending',
     },

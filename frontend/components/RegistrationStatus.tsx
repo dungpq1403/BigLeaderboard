@@ -15,7 +15,7 @@ interface RegistrationStatusProps {
   onStatusChange?: () => void; // Callback khi status thay đổi
 }
 
-type Status = 'not_registered' | 'registered' | 'pending' | 'cancelled';
+type Status = 'not_registered' | 'registered' | 'cancelled';
 
 export default function RegistrationStatus({ 
   tournamentId, 
@@ -58,7 +58,7 @@ export default function RegistrationStatus({
       const data = await response.json();
       
       if (data.isRegistered) {
-        setStatus(data.status);
+        setStatus(data.status === 'approved' ? 'registered' : data.status);
       } else {
         setStatus('not_registered');
       }
@@ -78,8 +78,6 @@ export default function RegistrationStatus({
     switch (status) {
       case 'registered':
         return 'Đã đăng ký';
-      case 'pending':
-        return 'Đang chờ duyệt';
       case 'cancelled':
         return 'Đã hủy';
       default:
@@ -91,8 +89,6 @@ export default function RegistrationStatus({
     switch (status) {
       case 'registered':
         return '#10b981';
-      case 'pending':
-        return '#f59e0b';
       case 'cancelled':
         return '#ef4444';
       default:
@@ -102,6 +98,11 @@ export default function RegistrationStatus({
 
   const handleRegisterClick = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    if (!isLoggedIn) {
+      toast.info('Vui lòng đăng nhập để đăng ký giải đấu');
+      router.push('/login');
+      return;
+    }
     router.push(`/tournaments/${tournamentId}/register`);
   };
 
@@ -165,23 +166,9 @@ export default function RegistrationStatus({
     );
   }
 
-  if (!isLoggedIn) {
-    if (variant === 'button') {
-      return (
-        <button 
-          className={`${styles.buttonStatus} ${styles.not_registered}`}
-          onClick={(e) => handleRegisterClick(e)}
-        >
-          Đăng ký
-        </button>
-      );
-    }
-    return null;
-  }
-
   // Button variant - hiển thị nút Đăng ký hoặc Hủy đăng ký
   if (variant === 'button') {
-    if (status === 'registered' || status === 'pending') {
+    if (isLoggedIn && status === 'registered') {
       return (
         <button 
           className={`${styles.buttonStatus} ${styles.cancelButton}`}
@@ -198,10 +185,14 @@ export default function RegistrationStatus({
       <button 
         className={`${styles.buttonStatus} ${styles.not_registered}`}
         onClick={(e) => handleRegisterClick(e)}
-      >
+        >
         Đăng ký
       </button>
     );
+  }
+
+  if (!isLoggedIn) {
+    return null;
   }
 
   // Badge variant

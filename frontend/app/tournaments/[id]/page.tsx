@@ -40,6 +40,7 @@ interface TournamentDetail {
   groupColumns?: any[];
   teamMembers: number;
   teamSubstitutes: number;
+  thirdPlaceMatch: boolean;
 }
 
 interface Contact {
@@ -181,6 +182,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
     groupColumns: tournament.groupColumns || null,
     teamMembers: tournament.teamMembers ?? null,
     teamSubstitutes: tournament.teamSubstitutes ?? null,
+    thirdPlaceMatch: tournament.thirdPlaceMatch ?? false,
   };
 
   const editModal = showEditModal && mounted && createPortal(
@@ -295,6 +297,11 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
                   </span>
                 </div>
               )}
+              {tournament.thirdPlaceMatch && (
+                <div className={styles.thirdPlaceBadge}>
+                  🥉 Có trận tranh giải ba, tư
+                </div>
+              )}
             </div>
             
             {tournament.description && (
@@ -353,11 +360,11 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
                     variant="button"
                   />
                 )}
-                {!isCreator && currentUserId && (
+                {!isCreator && (
                   <RegistrationStatus 
                     tournamentId={tournament.id}
                     tournamentCreatorId={tournament.createdBy}
-                    currentUserId={currentUserId}
+                    currentUserId={currentUserId || undefined}
                     variant="button"
                     onStatusChange={handleRegistrationChange}
                   />

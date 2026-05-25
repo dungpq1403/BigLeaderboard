@@ -13,6 +13,7 @@ import AdvancementStepsManager from '@/components/AdvancementStepsManager';
 import BackButton from '@/components/BackButton';
 import { useDeleteImage } from '@/hooks/useDeleteImage';
 import TeamSizeSelector from '@/components/TeamSizeSelector';
+import ThirdPlaceCheckbox from '@/components/ThirdPlaceCheckbox';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
@@ -40,6 +41,7 @@ export default function CreateTournamentPage() {
     imageUrl: '',
   });
 
+  const [thirdPlaceMatch, setThirdPlaceMatch] = useState(false);
   const [formatOrder, setFormatOrder] = useState<string[]>(['swiss']);
   const [advancementSteps, setAdvancementSteps] = useState<(number | null)[]>([]); // mảng số lượng đi tiếp
   const [groupColumns, setGroupColumns] = useState<any[]>([]);
@@ -168,6 +170,12 @@ export default function CreateTournamentPage() {
     }
   }
 
+  const handleThirdPlaceChange = (checked: boolean) => {
+    setThirdPlaceMatch(checked);
+  };
+
+  const hasSingleElimination = formatOrder.includes('single_elimination');
+
   // ==================== Submit ====================
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -215,6 +223,7 @@ export default function CreateTournamentPage() {
         groupColumns: formatOrder.includes('group') ? groupColumns : null,
         teamMembers: formData.participantType === 'team' ? teamSize.teamMembers : null,
         teamSubstitutes: formData.participantType === 'team' ? teamSize.teamSubstitutes : null,
+        thirdPlaceMatch: thirdPlaceMatch,
       };
 
       console.log('Submitting:', submitData);
@@ -255,6 +264,10 @@ export default function CreateTournamentPage() {
       </div>
     );
   }
+
+  // Kiểm tra single_elimination có phải cuối cùng không
+  const isSingleEliminationLast = formatOrder.length > 0 && 
+    formatOrder[formatOrder.length - 1] === 'single_elimination';
 
   const handleRemoveImage = async () => {
     if (formData.imageUrl) {
@@ -302,6 +315,15 @@ export default function CreateTournamentPage() {
             />
           )}
           {errors.advancementSteps && <span className={styles.errorText}>{errors.advancementSteps}</span>}
+
+          {hasSingleElimination && (
+            <ThirdPlaceCheckbox
+            value={thirdPlaceMatch}
+            onChange={handleThirdPlaceChange}
+            disabled={!isSingleEliminationLast}
+            reasonDisabled="Vòng loại trực tiếp phải là vòng cuối cùng của giải đấu để có trận tranh ba, tư."
+            />
+          )}
 
           {/* Ngày diễn ra / kết thúc */}
           <div className={styles.formRow}>

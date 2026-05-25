@@ -171,11 +171,11 @@ export default function TournamentList({ gameId }: TournamentListProps) {
             </div>
             <div className={styles.actionButtons}>
               {/* Nút đăng ký / hủy đăng ký - chỉ hiển thị nếu không phải host */}
-              {!isCreator && currentUserId && (
+              {!isCreator && (
                 <RegistrationStatus 
                   tournamentId={tournament.id}
                   tournamentCreatorId={tournament.createdBy}
-                  currentUserId={currentUserId}
+                  currentUserId={currentUserId || undefined}
                   variant="button"
                   onStatusChange={handleRegistrationChange}
                 />

@@ -105,6 +105,7 @@ export default function EditTournamentPage({ params }: EditTournamentPageProps) 
     groupColumns: tournament.groupColumns || null,
     teamMembers: tournament.teamMembers ?? null,
     teamSubstitutes: tournament.teamSubstitutes ?? null,
+    thirdPlaceMatch: tournament.thirdPlaceMatch ?? false,
   };
 
   const handleSuccess = () => {

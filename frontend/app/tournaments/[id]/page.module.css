@@ -380,3 +380,14 @@
     justify-content: center;
   }
 }
+
+.thirdPlaceBadge {
+  background: linear-gradient(135deg, #803d16 0%, #472009 100%);
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.7rem;
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}

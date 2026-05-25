@@ -89,6 +89,12 @@ const Tournament = sequelize.define(
       allowNull: true,
       field: 'team_substitutes',
     },
+    thirdPlaceMatch: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: 'third_place_match',
+    },
   },
   {
     tableName: 'tournaments',

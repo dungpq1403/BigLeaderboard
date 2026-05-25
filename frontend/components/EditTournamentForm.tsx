@@ -9,9 +9,9 @@ import FormatOrderSelector from '@/components/FormatOrderSelector';
 import ContactList from '@/components/ContactList';
 import GroupColumnsManager from '@/components/GroupColumnsManager';
 import AdvancementStepsManager from '@/components/AdvancementStepsManager';
-import BackButton from '@/components/BackButton';
 import { useDeleteImage } from '@/hooks/useDeleteImage';
 import TeamSizeSelector from './TeamSizeSelector';
+import ThirdPlaceCheckbox from '@/components/ThirdPlaceCheckbox';
 
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
@@ -40,6 +40,7 @@ interface TournamentData {
   groupColumns: any[] | null;
   teamMembers: number | null;
   teamSubstitutes: number | null;
+  thirdPlaceMatch?: boolean; 
 }
 
 interface EditTournamentFormProps {
@@ -62,6 +63,7 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
     imageUrl: tournament.imageUrl || '',
   });
 
+  const [thirdPlaceMatch, setThirdPlaceMatch] = useState(tournament.thirdPlaceMatch || false);
   const [formatOrder, setFormatOrder] = useState<string[]>(tournament.formats || ['swiss']);
   const [advancementSteps, setAdvancementSteps] = useState<(number | null)[]>(tournament.advancementSteps || []);
   const [groupColumns, setGroupColumns] = useState<any[]>(tournament.groupColumns || []);
@@ -76,6 +78,10 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
     teamMembers: tournament.teamMembers || null,
     teamSubstitutes: tournament.teamSubstitutes || null,
   });
+
+  useEffect(() => {
+    setThirdPlaceMatch(tournament.thirdPlaceMatch || false);
+  }, [tournament]);
 
   // Reset form khi tournament thay đổi
   useEffect(() => {
@@ -97,6 +103,7 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
       teamMembers: tournament.teamMembers || null,
       teamSubstitutes: tournament.teamSubstitutes || null,
     });
+    setThirdPlaceMatch(tournament.thirdPlaceMatch || false);
   }, [tournament]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -195,6 +202,12 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
     setTeamSize(data);
   };
 
+  const handleThirdPlaceChange = (checked: boolean) => {
+    setThirdPlaceMatch(checked);
+  };
+
+  const hasSingleElimination = formatOrder.includes('single_elimination');
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
@@ -235,6 +248,7 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
         groupColumns: formatOrder.includes('group') ? groupColumns : null,
         teamMembers: formData.participantType === 'team' ? teamSize.teamMembers : null,
         teamSubstitutes: formData.participantType === 'team' ? teamSize.teamSubstitutes : null,
+        thirdPlaceMatch: hasSingleElimination ? thirdPlaceMatch : false,
       };
 
       const response = await fetch(`${API_BASE}/tournaments/${tournament.id}`, {
@@ -267,6 +281,9 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
       setLoading(false);
     }
   };
+
+  const isSingleEliminationLast = formatOrder.length > 0 && 
+    formatOrder[formatOrder.length - 1] === 'single_elimination';
 
   const handleRemoveImage = async () => {
     if (formData.imageUrl) {
@@ -317,6 +334,15 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
             />
           )}
           {errors.advancementSteps && <span className={styles.errorText}>{errors.advancementSteps}</span>}
+
+          {hasSingleElimination && (
+            <ThirdPlaceCheckbox
+              value={thirdPlaceMatch}
+              onChange={handleThirdPlaceChange}
+              disabled={!isSingleEliminationLast}
+              reasonDisabled="Vòng loại trực tiếp phải là vòng cuối cùng của giải đấu để có trận tranh ba, tư."
+            />
+          )}
 
           {/* Ngày tháng */}
           <div className={styles.formRow}>

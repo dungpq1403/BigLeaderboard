@@ -5,14 +5,15 @@ import { notFound, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import styles from './page.module.css';
-import TournamentStatus from '@/components/TournamentStatus';
-import RegistrationStatus from '@/components/RegistrationStatus';
-import TournamentCreator from '@/components/TournamentCreator';
-import BackButton from '@/components/BackButton';
-import DeleteTournamentButton from '@/components/DeleteTournamentButton';
-import EditTournamentForm from '@/components/EditTournamentForm';
+import TournamentStatus from '@/components/tournament/TournamentStatus';
+import RegistrationStatus from '@/components/registration/RegistrationStatus';
+import TournamentCreator from '@/components/tournament/TournamentCreator';
+import BackButton from '@/components/button/BackButton';
+import DeleteTournamentButton from '@/components/tournament/DeleteTournamentButton';
+import EditTournamentForm from '@/components/edit/EditTournamentForm';
 import { useFormat } from '@/context/FormatContext';
 import Link from 'next/link';
+import BracketManager from '@/components/brackets/BracketManager';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
@@ -50,6 +51,13 @@ interface Contact {
   contact: string;
 }
 
+interface RoundBestOf {
+  tournamentId: number;
+  roundNumber: number;
+  formatType: string;
+  bestOf: number;
+}
+
 interface TournamentDetailPageProps {
   params: Promise<{ id: string }>;
 }
@@ -65,6 +73,8 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
   const [refreshKey, setRefreshKey] = useState(0);
   const [showEditModal, setShowEditModal] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [participants, setParticipants] = useState<any[]>([]);
+  const [roundBestOf, setRoundBestOf] = useState <RoundBestOf[]>([])
 
   useEffect(() => {
     setMounted(true);
@@ -73,12 +83,14 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
 
   const fetchTournamentData = async () => {
     const { id } = await params;
-    
+
     try {
       const session = localStorage.getItem('authSession');
+      let token = ''
       if (session) {
-        const { user } = JSON.parse(session);
+        const { user, token: t } = JSON.parse(session);
         setCurrentUserId(user.id);
+        token = t;
       }
       
       const tournamentResponse = await fetch(`${API_BASE}/tournaments/${id}`);
@@ -100,6 +112,25 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
       const contactsResponse = await fetch(`${API_BASE}/tournaments/${id}/contacts`);
       const contactsData = await contactsResponse.json();
       setContacts(Array.isArray(contactsData) ? contactsData : []);
+
+      const roundBORes = await fetch(`${API_BASE}/tournaments/${id}/round-best-of`);
+      const roundBOData = await roundBORes.json();
+      setRoundBestOf(Array.isArray(roundBOData) ? roundBOData : []);
+
+      if (token) {
+        try{
+          const participantsResponse = await fetch(`${API_BASE}/tournaments/${id}/participants`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (participantsResponse.ok) {
+            const participantsData = await participantsResponse.json();
+            setParticipants(Array.isArray(participantsData) ? participantsData : []);
+          }
+        } catch (error) {
+          console.error('Failed to fetch participants:', error);
+        }
+      };
+
     } catch (error) {
       console.error('Failed to fetch tournament:', error);
       setTournament(null);
@@ -182,6 +213,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
     groupColumns: tournament.groupColumns || null,
     teamMembers: tournament.teamMembers ?? null,
     teamSubstitutes: tournament.teamSubstitutes ?? null,
+    roundBestOfs: roundBestOf.map(r =>({ roundNumber: r.roundNumber, formatType: r.formatType, bestOf: r.bestOf })),
     thirdPlaceMatch: tournament.thirdPlaceMatch ?? false,
   };
 
@@ -370,10 +402,16 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
                   />
                 )}
               </div>
-            </div>
+            </div>   
           </div>
         </div>
       </div>
+      {/* Bracket Manager - Hiển thị nhánh đấu */}
+      <BracketManager
+        tournamentId={tournament.id}
+        tournament={tournament}
+        isCreator={isCreator}
+      />
       {editModal}
     </>
   );

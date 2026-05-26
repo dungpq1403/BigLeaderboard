@@ -32,6 +32,7 @@ export default function GroupColumnsManager({ value, onChange }: GroupColumnsMan
         { id: 'points', name: 'Điểm' },
         { id: 'matches', name: 'Số trận' },
         { id: 'wins', name: 'Thắng' },
+        { id: 'tie', name: 'Hòa'},
         { id: 'losses', name: 'Thua' },
       ];
       setColumns(defaultColumns);
@@ -53,17 +54,6 @@ export default function GroupColumnsManager({ value, onChange }: GroupColumnsMan
     setColumns(updated);
     onChange(updated);
     setNewColumnName('');
-  };
-
-  // Xóa cột
-  const removeColumn = (id: string) => {
-    if (columns.length <= 2) {
-      toast.error('Phải có ít nhất 2 cột (Hạng và Tên đội)');
-      return;
-    }
-    const updated = columns.filter(c => c.id !== id);
-    setColumns(updated);
-    onChange(updated);
   };
 
   // Cập nhật tên cột
@@ -127,19 +117,6 @@ export default function GroupColumnsManager({ value, onChange }: GroupColumnsMan
     <div className={styles.container}>
       <div className={styles.header}>
         <label className={styles.label}>📋 Cấu hình bảng vòng bảng</label>
-        <div className={styles.addColumnForm}>
-          <input
-            type="text"
-            value={newColumnName}
-            onChange={(e) => setNewColumnName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addColumn()}
-            placeholder="Tên cột mới (ví dụ: Điểm, Hiệu số, Số trận...)"
-            className={styles.columnInput}
-          />
-          <button type="button" onClick={addColumn} className={styles.addColumnBtn}>
-            + Thêm cột
-          </button>
-        </div>
         <p className={styles.dragHint}>💡 Mẹo: Kéo thả (drag & drop) để sắp xếp thứ tự cột</p>
       </div>
 
@@ -164,16 +141,8 @@ export default function GroupColumnsManager({ value, onChange }: GroupColumnsMan
               value={col.name}
               onChange={(e) => updateColumnName(col.id, e.target.value)}
               className={styles.columnNameInput}
+              disabled={true}
             />
-            <button 
-              type="button" 
-              onClick={() => removeColumn(col.id)} 
-              className={styles.removeColumnBtn}
-              disabled={columns.length <= 2}
-              title={columns.length <= 2 ? "Phải có ít nhất 2 cột" : "Xóa cột"}
-            >
-              ✕
-            </button>
           </div>
         ))}
       </div>

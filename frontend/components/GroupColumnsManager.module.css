@@ -41,22 +41,6 @@
   border-color: #f59e0b;
 }
 
-.addColumnBtn {
-  background: linear-gradient(rgb(180, 91, 39), rgb(97, 48, 22));
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.addColumnBtn:hover {
-  transform: translateY(-2px);
-  background: linear-gradient(rgb(189, 97, 43), rgb(138, 68, 31));
-}
-
 .dragHint {
   font-size: 0.7rem;
   color: #fcd34d;

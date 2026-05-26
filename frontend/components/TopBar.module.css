@@ -11,6 +11,11 @@
 
 .brand {
   @apply text-2xl font-bold;
+  display: flex;
+}
+
+.brandText {
+  padding-top: 10px;
 }
 
 /* Search Section */

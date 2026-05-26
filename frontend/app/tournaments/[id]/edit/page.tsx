@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import EditTournamentForm from '@/components/EditTournamentForm';
+import EditTournamentForm from '@/components/edit/EditTournamentForm';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
@@ -18,6 +18,7 @@ export default function EditTournamentPage({ params }: EditTournamentPageProps) 
   const [contacts, setContacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreator, setIsCreator] = useState(false);
+  const [roundBestOf, setRoundBestOf] = useState<any[]>([])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -60,6 +61,11 @@ export default function EditTournamentPage({ params }: EditTournamentPageProps) 
         const contactsRes = await fetch(`${API_BASE}/tournaments/${id}/contacts`);
         const contactsData = await contactsRes.json();
         setContacts(Array.isArray(contactsData) ? contactsData : []);
+
+        //fetch roundBestOfs
+        const roundBORes = await fetch(`${API_BASE}/tournaments/${id}/round-best-of`);
+        const roundBOData = await roundBORes.json();
+        setRoundBestOf(Array.isArray(roundBOData) ? roundBOData : []);
         
       } catch (error) {
         console.error('Failed to fetch tournament:', error);
@@ -105,6 +111,7 @@ export default function EditTournamentPage({ params }: EditTournamentPageProps) 
     groupColumns: tournament.groupColumns || null,
     teamMembers: tournament.teamMembers ?? null,
     teamSubstitutes: tournament.teamSubstitutes ?? null,
+    roundBestOfs: roundBestOf.map(r => ({ roundNumber: r.roundNumber, formatType: r.formatType, bestOf: r.bestOf })),
     thirdPlaceMatch: tournament.thirdPlaceMatch ?? false,
   };
 

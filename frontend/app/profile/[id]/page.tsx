@@ -3,8 +3,8 @@
 import { notFound, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import styles from './page.module.css';
-import TournamentListProfile from '@/components/TournamentListProfile';
-import EditProfileModal from '@/components/EditProfileModal';
+import TournamentListProfile from '@/components/tournament/TournamentListProfile';
+import EditProfileModal from '@/components/edit/EditProfileModal';
 import GameProfileManager from '@/components/GameProfileManager';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";

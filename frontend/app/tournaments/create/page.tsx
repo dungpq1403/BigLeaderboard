@@ -10,10 +10,11 @@ import FormatOrderSelector from '@/components/FormatOrderSelector';
 import ContactList from '@/components/ContactList';
 import GroupColumnsManager from '@/components/GroupColumnsManager';
 import AdvancementStepsManager from '@/components/AdvancementStepsManager';
-import BackButton from '@/components/BackButton';
+import BackButton from '@/components/button/BackButton';
 import { useDeleteImage } from '@/hooks/useDeleteImage';
-import TeamSizeSelector from '@/components/TeamSizeSelector';
+import TeamSizeSelector from '@/components/team/TeamSizeSelector';
 import ThirdPlaceCheckbox from '@/components/ThirdPlaceCheckbox';
+import RoundBestOfManager from '@/components/BO/RoundBestOfManager';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
@@ -58,6 +59,7 @@ export default function CreateTournamentPage() {
     teamSubstitutes: null,
   });
   const newErrors: Record<string, string> = {};
+  const [roundBestOfs, setRoundBestOfs] = useState<any[]>([]);
   
 
   // ==================== Handlers ====================
@@ -224,6 +226,7 @@ export default function CreateTournamentPage() {
         teamMembers: formData.participantType === 'team' ? teamSize.teamMembers : null,
         teamSubstitutes: formData.participantType === 'team' ? teamSize.teamSubstitutes : null,
         thirdPlaceMatch: thirdPlaceMatch,
+        roundBestOfs: roundBestOfs.length > 0 ? roundBestOfs : null,
       };
 
       console.log('Submitting:', submitData);
@@ -304,6 +307,15 @@ export default function CreateTournamentPage() {
             onChange={setFormatOrder}
           />
           {errors.formatOrder && <span className={styles.errorText}>{errors.formatOrder}</span>}
+
+          {formatOrder.length > 0 && (
+            <RoundBestOfManager
+              formats={formatOrder}
+              formatNames={FORMAT_NAMES}
+              value={roundBestOfs}
+              onChange={setRoundBestOfs}
+            />
+          )}
 
           {/* Số đội đi tiếp (dynamic steps) */}
           {formatOrder.length > 1 && (

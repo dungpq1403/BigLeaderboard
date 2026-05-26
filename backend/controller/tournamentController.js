@@ -1,6 +1,8 @@
 const { Op } = require('sequelize');
 const Tournament = require('../models/Tournament');
 const TournamentContact = require('../models/TournamentContact');
+const GroupMatch = require('../models/GroupMatch');
+const TournamentRoundBestOf = require('../models/TournamentRoundBestOf');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
 const path = require('path');
@@ -94,7 +96,7 @@ const tournamentController = {
       const { 
         name, formats, startDate, endDate, maxParticipants, 
         participantType, prize, description, imageUrl, gameId, contacts,
-        advancementSteps, groupColumns, teamMembers, teamSubstitutes, thirdPlaceMatch // thay advancementCount bằng advancementSteps
+        advancementSteps, groupColumns, teamMembers, teamSubstitutes, thirdPlaceMatch, defaultBestOf, roundBestOfs // thay advancementCount bằng advancementSteps
       } = req.body;
       
       // Validation cơ bản
@@ -136,6 +138,18 @@ const tournamentController = {
         teamSubstitutes: teamSubstitutes || null,
         thirdPlaceMatch: thirdPlaceMatch || false,
       });
+
+      if (roundBestOfs && Array.isArray(roundBestOfs) && roundBestOfs.length > 0) {
+        await TournamentRoundBestOf.destroy({ where: { tournamentId: tournament.id } });
+        
+        const roundData = roundBestOfs.map(round => ({
+          tournamentId: tournament.id,
+          roundNumber: round.roundNumber,
+          formatType: round.formatType,
+          bestOf: round.bestOf,
+        }));
+        await TournamentRoundBestOf.bulkCreate(roundData);
+      }
 
       // Xử lý contacts như cũ
       if (contacts && Array.isArray(contacts) && contacts.length > 0) {
@@ -234,6 +248,61 @@ const tournamentController = {
     }
   },
 
+  async getBracketData(req, res){
+    try {
+      const { id } = req.params;
+      
+      const tournament = await Tournament.findByPk(id);
+      if (!tournament) {
+        return res.status(404).json({ message: 'Tournament not found.' });
+      }
+      
+      // Lấy danh sách participants nhưng chỉ lấy thông tin cần thiết cho bảng đấu
+      const registrations = await Registration.findAll({
+        where: { tournamentId: id, status: 'approved' },
+        attributes: ['id', 'userId', 'participantType', 'fullName', 'teamName'],
+      });
+      
+      // Format lại dữ liệu cho bảng đấu
+      const bracketParticipants = registrations.map(reg => {
+        if (reg.participantType === 'team') {
+          return {
+            id: reg.id,
+            name: reg.teamName,
+            type: 'team',
+          };
+        } else {
+          return {
+            id: reg.id,
+            name: reg.fullName,
+            type: 'person',
+          };
+        }
+      });
+      
+      // Lấy group matches nếu có
+      const matches = await GroupMatch.findAll({
+        where: { tournamentId: id },
+        order: [['groupId', 'ASC'], ['createdAt', 'ASC']],
+      });
+      
+      res.json({
+        tournament: {
+          id: tournament.id,
+          name: tournament.name,
+          formats: tournament.formats,
+          participantType: tournament.participantType,
+          groupColumns: tournament.groupColumns,
+          thirdPlaceMatch: tournament.thirdPlaceMatch,
+        },
+        participants: bracketParticipants,
+        matches: matches,
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to fetch bracket data.', error: error.message });
+    }
+  },
+  
   async updateTournament(req, res) {
     try {
       const { id } = req.params;
@@ -253,6 +322,7 @@ const tournamentController = {
         teamMembers,
         teamSubstitutes,
         thirdPlaceMatch,
+        roundBestOfs,
       } = req.body;
   
       // Tìm giải đấu
@@ -300,6 +370,18 @@ const tournamentController = {
         teamSubstitutes: teamSubstitutes !== undefined ? teamSubstitutes : tournament.teamSubstitutes,
         thirdPlaceMatch: thirdPlaceMatch !== undefined ? thirdPlaceMatch : tournament.thirdPlaceMatch,
       });
+
+      if (roundBestOfs && Array.isArray(roundBestOfs) && roundBestOfs.length > 0) {
+        await TournamentRoundBestOf.destroy({ where: { tournamentId: tournament.id } });
+        
+        const roundData = roundBestOfs.map(round => ({
+          tournamentId: tournament.id,
+          roundNumber: round.roundNumber,
+          formatType: round.formatType,
+          bestOf: round.bestOf,
+        }));
+        await TournamentRoundBestOf.bulkCreate(roundData);
+      }
   
       // Cập nhật contacts (xóa cũ, thêm mới)
       if (contacts && Array.isArray(contacts)) {
@@ -334,6 +416,98 @@ const tournamentController = {
     } catch (error) {
       console.error('Update tournament error:', error);
       res.status(500).json({ message: 'Failed to update tournament.', error: error.message });
+    }
+  },
+
+  // GET /api/tournaments/:id/group-matches
+  async getGroupMatches(req, res) {
+    try {
+      const { id } = req.params;
+      
+      const matches = await GroupMatch.findAll({
+        where: { tournamentId: id },
+        order: [['groupId', 'ASC'], ['createdAt', 'ASC']],
+      });
+      
+      res.json({ matches });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to fetch matches.', error: error.message });
+    }
+  },
+
+  // PUT /api/tournaments/:id/group-matches/:matchId
+  async updateGroupMatches (req, res) {
+    try {
+      const { id, matchId } = req.params;
+      const { teamAScore, teamBScore, winnerId } = req.body;
+      
+      const match = await GroupMatch.findOne({
+        where: { id: matchId, tournamentId: id },
+      });
+      
+      if (!match) {
+        return res.status(404).json({ message: 'Match not found.' });
+      }
+      
+      // Cập nhật kết quả
+      match.teamAScore = teamAScore;
+      match.teamBScore = teamBScore;
+      match.winnerId = winnerId;
+      match.isCompleted = true;
+      match.completedAt = new Date();
+      
+      if (winnerId === match.teamAId) {
+        match.winnerName = match.teamAName;
+      } else if (winnerId === match.teamBId) {
+        match.winnerName = match.teamBName;
+      }
+      
+      await match.save();
+      
+      res.json({ message: 'Match result updated.', match });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to update match.', error: error.message });
+    }
+  },
+
+// POST /api/tournaments/:id/initialize-group-matches
+  async createGroupMatches(req, res) {
+    try {
+      const { id } = req.params;
+      const { groups, bestOf } = req.body;
+      
+      // Xóa các trận đấu cũ
+      await GroupMatch.destroy({ where: { tournamentId: id } });
+      
+      // Tạo trận đấu mới cho từng bảng
+      const allMatches = [];
+      
+      for (const group of groups) {
+        const teams = group.teams;
+        for (let i = 0; i < teams.length; i++) {
+          for (let j = i + 1; j < teams.length; j++) {
+            allMatches.push({
+              tournamentId: id,
+              groupId: group.id,
+              groupName: group.name,
+              teamAId: teams[i].id,
+              teamAName: teams[i].name,
+              teamBId: teams[j].id,
+              teamBName: teams[j].name,
+              bestOf: bestOf || 3,
+              isCompleted: false,
+              teamAScore: 0,
+              teamBScore: 0,
+            });
+          }
+        }
+      }
+      
+      await GroupMatch.bulkCreate(allMatches);
+      
+      res.json({ message: 'Matches initialized.', count: allMatches.length });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to initialize matches.', error: error.message });
     }
   },
 };

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import styles from './page.module.css';
-import AddGameButton from '@/components/AddGameButton';
+import AddGameButton from '@/components/button/AddGameButton';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 

@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import styles from './page.module.css';
-import TournamentList from '@/components/TournamentList';
-import CreateTournamentButton from '@/components/CreateTournamentButton';
+import TournamentList from '@/components/tournament/TournamentList';
+import CreateTournamentButton from '@/components/tournament/CreateTournamentButton';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 

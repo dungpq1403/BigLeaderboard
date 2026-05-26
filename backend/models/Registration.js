@@ -59,7 +59,7 @@ const Registration = sequelize.define(
     status: {
       type: DataTypes.ENUM('approved', 'cancelled'),
       allowNull: false,
-      defaultValue: 'pending',
+      defaultValue: 'approved',
     },
     teamName: {
       type: DataTypes.STRING(100),

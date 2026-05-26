@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useState, useRef, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./TopBar.module.css";
-import TournamentCreator from "./TournamentCreator";
+import TournamentCreator from "./tournament/TournamentCreator";
 import { useFormat } from "@/context/FormatContext";
+import Image from 'next/image';
 
 type AuthUser = {
   id: number;
@@ -179,7 +180,10 @@ export default function TopBar() {
   return (
     <nav className={styles.topBar}>
       <Link href='/' >
-        <div className={styles.brand}>BigTournament</div>
+        <div className={styles.brand}>
+          <Image src={'/uploads/logo.png'} alt='logo' width={60} height={60} />
+          <span className={styles.brandText}>BigTournament</span> 
+        </div>
       </Link>
       {/* Thanh tìm kiếm */}
       <div className={styles.searchContainer} ref={searchRef}>

@@ -3,7 +3,7 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import styles from './EditProfileModal.module.css';
-import TeamSizeSelector from '@/components/TeamSizeSelector';
+import TeamSizeSelector from '@/components/team/TeamSizeSelector';
 
 interface EditProfileModalProps {
   isOpen: boolean;

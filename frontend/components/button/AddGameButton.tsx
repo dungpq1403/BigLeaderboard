@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import styles from './AddGameButton.module.css';
-import CreateGameForm from './CreateGameForm';
+import CreateGameForm from '@/components/CreateGameForm';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 

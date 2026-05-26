@@ -10,7 +10,8 @@ import ContactList from '@/components/ContactList';
 import GroupColumnsManager from '@/components/GroupColumnsManager';
 import AdvancementStepsManager from '@/components/AdvancementStepsManager';
 import { useDeleteImage } from '@/hooks/useDeleteImage';
-import TeamSizeSelector from './TeamSizeSelector';
+import TeamSizeSelector from '@/components/team/TeamSizeSelector';
+import RoundBestOfManager from '@/components/BO/RoundBestOfManager';
 import ThirdPlaceCheckbox from '@/components/ThirdPlaceCheckbox';
 
 
@@ -40,6 +41,7 @@ interface TournamentData {
   groupColumns: any[] | null;
   teamMembers: number | null;
   teamSubstitutes: number | null;
+  roundBestOfs: Array<{ formatType: string; bestOf: number }>;
   thirdPlaceMatch?: boolean; 
 }
 
@@ -78,6 +80,7 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
     teamMembers: tournament.teamMembers || null,
     teamSubstitutes: tournament.teamSubstitutes || null,
   });
+  const [roundBestOfs, setRoundBestOfs] = useState<any[]>(tournament.roundBestOfs || []);
 
   useEffect(() => {
     setThirdPlaceMatch(tournament.thirdPlaceMatch || false);
@@ -104,6 +107,7 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
       teamSubstitutes: tournament.teamSubstitutes || null,
     });
     setThirdPlaceMatch(tournament.thirdPlaceMatch || false);
+    setRoundBestOfs(tournament.roundBestOfs || []);
   }, [tournament]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -248,6 +252,7 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
         groupColumns: formatOrder.includes('group') ? groupColumns : null,
         teamMembers: formData.participantType === 'team' ? teamSize.teamMembers : null,
         teamSubstitutes: formData.participantType === 'team' ? teamSize.teamSubstitutes : null,
+        roundBestOfs: roundBestOfs.filter(r => r.bestOf),
         thirdPlaceMatch: hasSingleElimination ? thirdPlaceMatch : false,
       };
 
@@ -334,6 +339,11 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
             />
           )}
           {errors.advancementSteps && <span className={styles.errorText}>{errors.advancementSteps}</span>}
+
+          {/* BO đấu cho từng vòng */}
+          {formatOrder.length > 0 && (
+            <RoundBestOfManager formats={formatOrder} formatNames={FORMAT_NAMES} value={roundBestOfs} onChange={setRoundBestOfs} />
+          )}
 
           {hasSingleElimination && (
             <ThirdPlaceCheckbox

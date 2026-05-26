@@ -12,6 +12,8 @@ const userController = require('../controller/userController');
 const gameController = require('../controller/gameController');
 const tournamentController = require('../controller/tournamentController');
 const registrationController = require('../controller/registrationController');
+const Tournament = require('../models/Tournament');
+const TournamentRoundBestOf = require('../models/TournamentRoundBestOf');
 const uploadController = require('../controller/uploadController');
 
 // Cấu hình multer cho tournament image
@@ -83,6 +85,61 @@ router.get('/tournaments/:id/participants', authMiddleware, tournamentController
 router.get('/games/:gameId/tournaments', tournamentController.getTournamentsByGame);
 // Thêm vào routes/api.js
 router.put('/tournaments/:id', authMiddleware, tournamentController.updateTournament);
+router.get('/tournaments/:id/group-matches', tournamentController.getGroupMatches);
+router.get('/tournaments/:id/bracket-data', tournamentController.getBracketData);
+router.put('/tournaments/:id/group-matches/:matchId', tournamentController.updateGroupMatches);
+router.post('/tournaments/:id/initialize-group-matches', tournamentController.createGroupMatches);
+// GET /api/tournaments/:id/round-best-of
+router.get('/tournaments/:id/round-best-of', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const roundBestOfs = await TournamentRoundBestOf.findAll({
+      where: { tournamentId: id },
+      order: [['roundNumber', 'ASC']],
+    });
+    
+    res.json(roundBestOfs);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch round best of settings.', error: error.message });
+  }
+});
+
+// PUT /api/tournaments/:id/round-best-of
+router.put('/tournaments/:id/round-best-of', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { roundBestOfs } = req.body;
+    
+    // Kiểm tra quyền creator
+    const tournament = await Tournament.findByPk(id);
+    if (!tournament) {
+      return res.status(404).json({ message: 'Tournament not found.' });
+    }
+    
+    if (tournament.createdBy !== req.user.id) {
+      return res.status(403).json({ message: 'You are not the creator of this tournament.' });
+    }
+    
+    // Xóa các cấu hình cũ
+    await TournamentRoundBestOf.destroy({ where: { tournamentId: id } });
+    
+    // Tạo cấu hình mới
+    if (roundBestOfs && Array.isArray(roundBestOfs) && roundBestOfs.length > 0) {
+      const roundData = roundBestOfs.map(round => ({
+        tournamentId: id,
+        roundNumber: round.roundNumber,
+        formatType: round.formatType,
+        bestOf: round.bestOf,
+      }));
+      await TournamentRoundBestOf.bulkCreate(roundData);
+    }
+    
+    res.json({ message: 'Round best of settings updated successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to update round best of settings.', error: error.message });
+  }
+});
 
 // ============ REGISTRATION ROUTES ============
 router.post('/tournaments/:id/register', authMiddleware, registrationController.registerTournament);

@@ -4,9 +4,9 @@ import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import styles from './RegistrationForm.module.css';
-import TournamentStatus from './TournamentStatus';
-import TournamentCreator from './TournamentCreator';
-import TeamMemberForm from './TeamMemberForm';
+import TournamentStatus from '@/components/tournament/TournamentStatus';
+import TournamentCreator from '@/components/tournament/TournamentCreator';
+import TeamMemberForm from '@/components/team/TeamMemberForm';
 import { useFormat } from '@/context/FormatContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";

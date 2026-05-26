@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './TournamentList.module.css';
 import TournamentStatus from './TournamentStatus';
-import RegistrationStatus from './RegistrationStatus';
+import RegistrationStatus from '@/components/registration/RegistrationStatus';
 import TournamentCreator from './TournamentCreator';
 import DeleteTournamentButton from './DeleteTournamentButton';
 import { useFormat } from '@/context/FormatContext';

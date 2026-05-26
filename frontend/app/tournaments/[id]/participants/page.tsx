@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
-import BackButton from '@/components/BackButton';
-import TeamDetails from '@/components/TeamDetails';
+import BackButton from '@/components/button/BackButton';
+import TeamDetails from '@/components/team/TeamDetails';
 import Link from 'next/link';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
@@ -177,8 +177,8 @@ export default function ParticipantsPage({ params }: ParticipantsPageProps) {
               
               // Hiển thị cho giải đấu cá nhân (giữ nguyên table nhưng bỏ cột status)
               return (
-                <Link href={`/profile/${participant.userId}`}>
-                  <div key={participant.id} className={styles.individualCard}>
+                <Link key={participant.id} href={`/profile/${participant.userId}`}>
+                  <div className={styles.individualCard}>
                     <div className={styles.individualInfo}>
                       <div className={styles.individualHeader}>
                         <span className={styles.individualName}>{participant.fullName}</span>

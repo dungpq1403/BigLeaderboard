@@ -1,0 +1,267 @@
+.container {
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.3) 0%, rgba(69, 26, 3, 0.3) 100%);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: bold;
+  color: #fde68a;
+  margin: 0;
+}
+
+.groupInfo {
+  font-size: 0.75rem;
+  color: #fcd34d;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+}
+
+.groupsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .groupsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.groupCard {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.groupHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
+}
+
+.groupName {
+  font-weight: bold;
+  color: white;
+}
+
+.groupCount {
+  font-size: 0.7rem;
+  color: #fde68a;
+}
+
+.groupTable {
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+.standingsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.7rem;
+}
+
+.standingsTable th,
+.standingsTable td {
+  padding: 0.375rem;
+  text-align: left;
+  color: #fef3c7;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.standingsTable th {
+  color: #fcd34d;
+  font-weight: 600;
+}
+
+.groupMatches {
+  padding: 0.75rem;
+  border-top: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.matchesTitle {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fcd34d;
+  margin-bottom: 0.5rem;
+}
+
+/* Container cho 2 cột */
+.matchesGrid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Mỗi cột chiếm 50% */
+.matchesColumn {
+  flex: 1;
+  min-width: 45%;
+}
+
+.matchesColumn:first-child{
+  border-right: 5px solid rgba(245, 158, 11, 0.1);
+  padding-right: 15px;
+}
+
+.matchItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.1);
+  flex-wrap: wrap;
+}
+
+.matchTeams {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 2;
+  min-width: 120px;
+}
+
+.matchTeam {
+  color: #fef3c7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.matchVs {
+  color: #f59e0b;
+  font-weight: bold;
+  font-size: 0.6rem;
+}
+
+.matchScore {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.scoreInput {
+  width: 45px;
+  padding: 0.25rem;
+  border: 1px solid #b45309;
+  border-radius: 0.25rem;
+  background: #fffbeb;
+  color: #1f2937;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.scoreInput:focus {
+  outline: none;
+  border-color: #f59e0b;
+}
+
+.scoreInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scoreSeparator {
+  color: #fcd34d;
+  font-weight: bold;
+}
+
+.matchStatus {
+  flex: 1;
+  min-width: 100px;
+  text-align: right;
+}
+
+.completedBadge {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.65rem;
+  color: white;
+  white-space: nowrap;
+}
+
+.pendingBadge {
+  background: rgba(107, 114, 128, 0.5);
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.65rem;
+  color: #fde68a;
+  white-space: nowrap;
+}
+
+/* Responsive cho mobile */
+@media (max-width: 768px) {
+  .matchesGrid {
+    flex-direction: column;
+  }
+  
+  .matchesColumn {
+    width: 100%;
+  }
+  
+  .matchTeams {
+    min-width: 100px;
+  }
+  
+  .matchTeam {
+    max-width: 80px;
+    font-size: 0.65rem;
+  }
+  
+  .matchStatus {
+    min-width: 80px;
+  }
+}
+
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  gap: 0.5rem;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(245, 158, 11, 0.3);
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.emptyState {
+  text-align: center;
+  padding: 2rem;
+  color: #fde68a;
+}

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import styles from './GroupStageBracket.module.css';
 import { calculateGroupStageStats, Match, TeamStats } from '@/utils/GroupStageScoring';
+import ScheduleMatchesModal, { PendingMatch } from './ScheduleMatchesModal';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
@@ -22,12 +23,16 @@ interface MatchData {
   id: string;
   teamAId: string;
   teamBId: string;
+  teamAName?: string;
+  teamBName?: string;
   teamAScore: number;
   teamBScore: number;
   winnerId: string | null;
   isCompleted: boolean;
+  scheduledTime?: string | null;
   round?: number;
   groupId?: string;
+  groupName?: string;
 }
 
 interface GroupStageBracketProps {
@@ -38,6 +43,7 @@ interface GroupStageBracketProps {
   bestOf?: number;
   isReadOnly?: boolean;
   onGroupChange?: (groups: Group[]) => void;
+  onSplitGroups?: () => void;
 }
 
 interface Group {
@@ -55,11 +61,16 @@ export default function GroupStageBracket({
   bestOf = 3,
   isReadOnly = false,
   onGroupChange, 
+  onSplitGroups,
 }: GroupStageBracketProps) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
+  const [editScores, setEditScores] = useState<{ teamA: number; teamB: number }>({ teamA: 0, teamB: 0 });
 
   // Khởi tạo columns từ groupColumns hoặc dùng mặc định
   useEffect(() => {
@@ -142,10 +153,9 @@ export default function GroupStageBracket({
   useEffect(() => {
     const initGroups = async () => {
       setLoading(true);
-      
-      // Fetch existing matches
-      const existingMatches = await fetchMatches();
-      
+
+      let existingMatches = await fetchMatches();
+
       if (teams.length === 0) {
         setGroups([]);
         setLoading(false);
@@ -153,27 +163,88 @@ export default function GroupStageBracket({
       }
 
       const teamsPerGroup = Math.ceil(teams.length / groupCount);
-      const newGroups: Group[] = [];
-      
+
+      // Tính trước danh sách cặp đấu phải có trong DB; nếu thiếu, tự sync.
+      // Bỏ so khớp groupId để hỗ trợ trường hợp UI đổi cấu hình bảng so với data cũ.
+      const expectedPairs: {
+        groupId: string;
+        groupName: string;
+        teamAId: string;
+        teamAName: string;
+        teamBId: string;
+        teamBName: string;
+      }[] = [];
       for (let i = 0; i < groupCount; i++) {
         const startIdx = i * teamsPerGroup;
         const endIdx = Math.min(startIdx + teamsPerGroup, teams.length);
         const groupTeams = teams.slice(startIdx, endIdx);
-        
-        // Tạo các trận đấu cho bảng (vòng tròn 1 lượt)
+        for (let a = 0; a < groupTeams.length; a++) {
+          for (let b = a + 1; b < groupTeams.length; b++) {
+            expectedPairs.push({
+              groupId: `group-${i + 1}`,
+              groupName: String.fromCharCode(65 + i),
+              teamAId: groupTeams[a].id,
+              teamAName: groupTeams[a].name,
+              teamBId: groupTeams[b].id,
+              teamBName: groupTeams[b].name,
+            });
+          }
+        }
+      }
+
+      const findInDb = (pair: { teamAId: string; teamBId: string }) =>
+        existingMatches.find(
+          (m: any) =>
+            (m.teamAId === pair.teamAId && m.teamBId === pair.teamBId) ||
+            (m.teamAId === pair.teamBId && m.teamBId === pair.teamAId)
+        );
+
+      const missingPairs = expectedPairs.filter((p) => !findInDb(p));
+
+      // Nếu là creator và còn thiếu cặp đấu trong DB → gọi ensure để tạo cho đủ
+      if (missingPairs.length > 0 && !isReadOnly) {
+        try {
+          const session = localStorage.getItem('authSession');
+          if (session) {
+            const { token } = JSON.parse(session);
+            const res = await fetch(
+              `${API_BASE}/tournaments/${tournamentId}/group-matches/ensure`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ pairs: missingPairs }),
+              }
+            );
+            if (res.ok) {
+              existingMatches = await fetchMatches();
+            }
+          }
+        } catch (err) {
+          console.error('Failed to ensure missing matches:', err);
+        }
+      }
+
+      const newGroups: Group[] = [];
+      for (let i = 0; i < groupCount; i++) {
+        const startIdx = i * teamsPerGroup;
+        const endIdx = Math.min(startIdx + teamsPerGroup, teams.length);
+        const groupTeams = teams.slice(startIdx, endIdx);
+
         const groupMatches: MatchData[] = [];
         for (let a = 0; a < groupTeams.length; a++) {
           for (let b = a + 1; b < groupTeams.length; b++) {
-            const existingMatch = existingMatches.find(
-              (m: any) => 
-                ((m.teamAId === groupTeams[a].id && m.teamBId === groupTeams[b].id) ||
-                 (m.teamAId === groupTeams[b].id && m.teamBId === groupTeams[a].id)) &&
-                m.groupId === `group-${i + 1}`
-            );
-            
+            const existingMatch = findInDb({
+              teamAId: groupTeams[a].id,
+              teamBId: groupTeams[b].id,
+            });
+
             if (existingMatch) {
               groupMatches.push(existingMatch);
             } else {
+              // Fallback hiếm gặp (user là viewer, không gọi ensure được)
               groupMatches.push({
                 id: `match-${Date.now()}-${i}-${a}-${b}`,
                 teamAId: groupTeams[a].id,
@@ -187,21 +258,21 @@ export default function GroupStageBracket({
             }
           }
         }
-        
+
         newGroups.push({
           id: `group-${i + 1}`,
-          name: String.fromCharCode(65 + i), // A, B, C, D, ...
+          name: String.fromCharCode(65 + i),
           teams: groupTeams,
           matches: groupMatches,
         });
       }
-      
+
       setGroups(newGroups);
       setLoading(false);
     };
-    
+
     initGroups();
-  }, [teams, groupCount, tournamentId]);
+  }, [teams, groupCount, tournamentId, isReadOnly]);
 
   // Cập nhật kết quả trận đấu
   const updateMatchScore = async (groupId: string, matchIndex: number, teamAScore: number, teamBScore: number) => {
@@ -250,6 +321,50 @@ export default function GroupStageBracket({
     setUpdating(false);
   };
 
+  // Bắt đầu edit kết quả của 1 cặp đấu đã hoàn thành
+  const startEditMatch = (match: MatchData) => {
+    if (!match.isCompleted) {
+      toast.info('Chỉ có thể chỉnh sửa cặp đấu đã có đội thắng');
+      return;
+    }
+    if (typeof match.id === 'string' && match.id.startsWith('match-')) {
+      toast.error('Cặp đấu chưa được khởi tạo trong CSDL');
+      return;
+    }
+    setEditingMatchId(match.id);
+    setEditScores({ teamA: match.teamAScore, teamB: match.teamBScore });
+  };
+
+  const cancelEditMatch = () => {
+    setEditingMatchId(null);
+  };
+
+  // Xác nhận chỉnh sửa: validate rồi lưu
+  const confirmEditMatch = async (groupId: string, matchIndex: number) => {
+    const neededWins = Math.ceil(bestOf / 2);
+    const { teamA, teamB } = editScores;
+
+    if (teamA < 0 || teamB < 0) {
+      toast.error('Điểm không được âm');
+      return;
+    }
+    if (teamA > neededWins || teamB > neededWins) {
+      toast.error(`Điểm không được vượt quá ${neededWins} (BO${bestOf})`);
+      return;
+    }
+    if (teamA === neededWins && teamB === neededWins) {
+      toast.error(`Không thể có tỉ số ${teamA}-${teamB}: cả 2 đội cùng đạt mức thắng`);
+      return;
+    }
+    if (teamA !== neededWins && teamB !== neededWins) {
+      toast.error(`Phải có 1 đội đạt ${neededWins} điểm để xác định người thắng`);
+      return;
+    }
+
+    await updateMatchScore(groupId, matchIndex, teamA, teamB);
+    setEditingMatchId(null);
+  };
+
   // Tính toán stats cho một bảng
   const getGroupStats = (group: Group) => {
     const formattedMatches: Match[] = group.matches.map(m => ({
@@ -279,6 +394,198 @@ export default function GroupStageBracket({
     }
   };
 
+  // Các trận chưa được lên lịch (status "chưa diễn ra")
+  const pendingMatches: PendingMatch[] = useMemo(() => {
+    const list: PendingMatch[] = [];
+    groups.forEach((group) => {
+      group.matches.forEach((m) => {
+        if (m.isCompleted) return;
+        if (m.scheduledTime) return;
+        if (typeof m.id === 'string' && m.id.startsWith('match-')) return; // bỏ id tạm
+        const teamA = group.teams.find((t) => t.id === m.teamAId);
+        const teamB = group.teams.find((t) => t.id === m.teamBId);
+        list.push({
+          id: m.id,
+          groupName: group.name,
+          teamAName: m.teamAName || teamA?.name || '?',
+          teamBName: m.teamBName || teamB?.name || '?',
+        });
+      });
+    });
+    return list;
+  }, [groups]);
+
+  const handleScheduleConfirm = async (matchIds: (number | string)[]) => {
+    setScheduling(true);
+    try {
+      const session = localStorage.getItem('authSession');
+      if (!session) {
+        toast.error('Bạn cần đăng nhập để lên lịch trận đấu');
+        return;
+      }
+      const { token } = JSON.parse(session);
+      const response = await fetch(
+        `${API_BASE}/tournaments/${tournamentId}/group-matches/schedule`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ matchIds }),
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        toast.error(err?.message || 'Không thể lên lịch các trận đấu');
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const matchIdSet = new Set(matchIds.map((x) => String(x)));
+      setGroups((prev) =>
+        prev.map((g) => ({
+          ...g,
+          matches: g.matches.map((m) =>
+            matchIdSet.has(String(m.id)) ? { ...m, scheduledTime: now } : m
+          ),
+        }))
+      );
+      toast.success(`Đã lên lịch ${matchIds.length} trận cho hôm nay`);
+      setShowScheduleModal(false);
+    } catch (error) {
+      console.error('Failed to schedule matches:', error);
+      toast.error('Có lỗi xảy ra khi lên lịch');
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  const formatMatchDate = (iso?: string | null) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
+
+  const renderMatchItem = (group: Group, match: MatchData, actualIdx: number) => {
+    const teamA = group.teams.find((t) => t.id === match.teamAId);
+    const teamB = group.teams.find((t) => t.id === match.teamBId);
+    const neededWins = Math.ceil(bestOf / 2);
+    const maxScore = neededWins * 2 - 1;
+    const isEditingThis = editingMatchId === match.id;
+    const teamAValue = isEditingThis ? editScores.teamA : match.teamAScore;
+    const teamBValue = isEditingThis ? editScores.teamB : match.teamBScore;
+    const inputDisabled =
+      isReadOnly ||
+      updating ||
+      (!isEditingThis && (match.isCompleted || !match.scheduledTime));
+    const inputMaxScore = isEditingThis ? neededWins : maxScore;
+
+    return (
+      <div key={match.id} className={styles.matchItem}>
+        <div className={styles.matchTeams}>
+          <span className={styles.matchTeam} title={teamA?.name}>{teamA?.name || '?'}</span>
+          <div className={styles.matchScore}>
+            <input
+              type="number"
+              className={styles.scoreInput}
+              value={teamAValue}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                if (isEditingThis) {
+                  setEditScores((s) => ({ ...s, teamA: val }));
+                } else {
+                  updateMatchScore(group.id, actualIdx, val, match.teamBScore);
+                }
+              }}
+              disabled={inputDisabled}
+              min="0"
+              max={inputMaxScore}
+            />
+          </div>
+          <span className={styles.matchVs}>vs</span>
+          <div className={styles.matchScore}>
+            <input
+              type="number"
+              className={styles.scoreInput}
+              value={teamBValue}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0;
+                if (isEditingThis) {
+                  setEditScores((s) => ({ ...s, teamB: val }));
+                } else {
+                  updateMatchScore(group.id, actualIdx, match.teamAScore, val);
+                }
+              }}
+              disabled={inputDisabled}
+              min="0"
+              max={inputMaxScore}
+            />
+          </div>
+          <span className={styles.matchTeam} title={teamB?.name}>{teamB?.name || '?'}</span>
+        </div>
+
+        <div className={styles.matchStatus}>
+          {match.scheduledTime && !match.isCompleted && (
+            <span className={styles.matchDate}>
+              Ngày diễn ra: {formatMatchDate(match.scheduledTime)}
+            </span>
+          )}
+          {match.isCompleted ? (
+            <span className={styles.completedBadge}>
+              ✅ {match.winnerId === match.teamAId ? teamA?.name : teamB?.name} thắng
+            </span>
+          ) : match.scheduledTime ? (
+            <span className={styles.ongoingBadge}>🟢 Đang diễn ra</span>
+          ) : (
+            <span className={styles.pendingBadge}>⏳ Chưa diễn ra</span>
+          )}
+          {!isReadOnly && (
+            isEditingThis ? (
+              <div className={styles.editActions}>
+                <button
+                  type="button"
+                  className={styles.confirmEditBtn}
+                  onClick={() => confirmEditMatch(group.id, actualIdx)}
+                  disabled={updating}
+                  title="Lưu chỉnh sửa"
+                >
+                  ✓ Lưu
+                </button>
+                <button
+                  type="button"
+                  className={styles.cancelEditBtn}
+                  onClick={cancelEditMatch}
+                  disabled={updating}
+                  title="Hủy"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={styles.editBtn}
+                onClick={() => startEditMatch(match)}
+                title={
+                  match.isCompleted
+                    ? 'Chỉnh sửa kết quả'
+                    : 'Chỉ có thể chỉnh sửa cặp đấu đã có đội thắng'
+                }
+              >
+                ✏️
+              </button>
+            )
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className={styles.loadingState}>
@@ -300,11 +607,46 @@ export default function GroupStageBracket({
     <div className={styles.container}>
       <div className={styles.header}>
         <h3 className={styles.title}>🏆 Vòng bảng</h3>
-        <div className={styles.groupInfo}>
-          {groups.length} bảng đấu · {teams.length} đội tham gia · BO{bestOf}
+        <div className={styles.headerActions}>
+          <div className={styles.groupInfo}>
+            {groups.length} bảng đấu · {teams.length} đội tham gia · BO{bestOf}
+          </div>
+          {!isReadOnly && onSplitGroups && (
+            <button
+              type="button"
+              className={styles.splitBtn}
+              onClick={onSplitGroups}
+              disabled={teams.length < 2}
+              title={
+                teams.length < 2
+                  ? 'Cần ít nhất 2 đội/người chơi để chia bảng'
+                  : 'Chia lại bảng đấu (sẽ xoá kết quả các trận hiện có)'
+              }
+            >
+              🧩 Chia lại bảng
+            </button>
+          )}
+          {!isReadOnly && (
+            <button
+              type="button"
+              className={styles.scheduleBtn}
+              onClick={() => setShowScheduleModal(true)}
+              disabled={scheduling || pendingMatches.length === 0}
+              title={
+                pendingMatches.length === 0
+                  ? 'Không còn cặp đấu nào ở trạng thái chưa diễn ra'
+                  : 'Chọn các cặp đấu sẽ diễn ra hôm nay'
+              }
+            >
+              📅 Chọn cặp đấu diễn ra hôm nay
+              {pendingMatches.length > 0 && (
+                <span className={styles.scheduleBadge}>{pendingMatches.length}</span>
+              )}
+            </button>
+          )}
         </div>
       </div>
-      
+
       <div className={styles.groupsGrid}>
         {groups.map((group) => {
           const stats = getGroupStats(group);
@@ -346,107 +688,19 @@ export default function GroupStageBracket({
                 <div className={styles.matchesGrid}>
                   {/* Cột trái - các trận đấu đầu tiên */}
                   <div className={styles.matchesColumn}>
-                    {group.matches.slice(0, Math.ceil(group.matches.length / 2)).map((match, matchIdx) => {
-                      const teamA = group.teams.find(t => t.id === match.teamAId);
-                      const teamB = group.teams.find(t => t.id === match.teamBId);
-                      const neededWins = Math.ceil(bestOf / 2);
-                      const maxScore = neededWins * 2 - 1;
-                      
-                      return (
-                        <div key={match.id} className={styles.matchItem}>
-                          <div className={styles.matchTeams}>
-                            <span className={styles.matchTeam} title={teamA?.name}>{teamA?.name || '?'}</span>
-                            <div className={styles.matchScore}>
-                              <input
-                                type="number"
-                                className={styles.scoreInput}
-                                value={match.teamAScore}
-                                onChange={(e) => updateMatchScore(group.id, matchIdx, parseInt(e.target.value) || 0, match.teamBScore)}
-                                disabled={updating || match.isCompleted || isReadOnly}
-                                min="0"
-                                max={maxScore}
-                              />
-                            </div> 
-                            <span className={styles.matchVs}>vs</span>
-                            <div className={styles.matchScore}>
-                              <input
-                                type="number"
-                                className={styles.scoreInput}
-                                value={match.teamBScore}
-                                onChange={(e) => updateMatchScore(group.id, matchIdx, match.teamAScore, parseInt(e.target.value) || 0)}
-                                disabled={updating || match.isCompleted || isReadOnly}
-                                min="0"
-                                max={maxScore}
-                              />
-                            </div>
-                            <span className={styles.matchTeam} title={teamB?.name}>{teamB?.name || '?'}</span>
-                          </div> 
-                          
-                          <div className={styles.matchStatus}>
-                            {match.isCompleted ? (
-                              <span className={styles.completedBadge}>
-                                ✅ {match.winnerId === match.teamAId ? teamA?.name : teamB?.name} thắng
-                              </span>
-                            ) : (
-                              <span className={styles.pendingBadge}>⏳ Chưa diễn ra</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {group.matches
+                      .slice(0, Math.ceil(group.matches.length / 2))
+                      .map((match, matchIdx) => renderMatchItem(group, match, matchIdx))}
                   </div>
-                  
+
                   {/* Cột phải - các trận đấu còn lại */}
                   <div className={styles.matchesColumn}>
-                    {group.matches.slice(Math.ceil(group.matches.length / 2)).map((match, matchIdx) => {
-                      const actualIdx = Math.ceil(group.matches.length / 2) + matchIdx;
-                      const teamA = group.teams.find(t => t.id === match.teamAId);
-                      const teamB = group.teams.find(t => t.id === match.teamBId);
-                      const neededWins = Math.ceil(bestOf / 2);
-                      const maxScore = neededWins * 2 - 1;
-                      
-                      return (
-                        <div key={match.id} className={styles.matchItem}>
-                          <div className={styles.matchTeams}>
-                            <span className={styles.matchTeam} title={teamA?.name}>{teamA?.name || '?'}</span>
-                            <div className={styles.matchScore}>
-                              <input
-                                type="number"
-                                className={styles.scoreInput}
-                                value={match.teamAScore}
-                                onChange={(e) => updateMatchScore(group.id, actualIdx, parseInt(e.target.value) || 0, match.teamBScore)}
-                                disabled={updating || match.isCompleted || isReadOnly}
-                                min="0"
-                                max={maxScore}
-                              />
-                            </div>  
-                            <span className={styles.matchVs}>vs</span>
-                            <div className={styles.matchScore}>
-                              <input
-                                type="number"
-                                className={styles.scoreInput}
-                                value={match.teamBScore}
-                                onChange={(e) => updateMatchScore(group.id, actualIdx, match.teamAScore, parseInt(e.target.value) || 0)}
-                                disabled={updating || match.isCompleted || isReadOnly}
-                                min="0"
-                                max={maxScore}
-                              />
-                            </div>
-                            <span className={styles.matchTeam} title={teamB?.name}>{teamB?.name || '?'}</span>
-                          </div>
-                          
-                          <div className={styles.matchStatus}>
-                            {match.isCompleted ? (
-                              <span className={styles.completedBadge}>
-                                ✅ {match.winnerId === match.teamAId ? teamA?.name : teamB?.name} thắng
-                              </span>
-                            ) : (
-                              <span className={styles.pendingBadge}>⏳ Chưa diễn ra</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {group.matches
+                      .slice(Math.ceil(group.matches.length / 2))
+                      .map((match, matchIdx) => {
+                        const actualIdx = Math.ceil(group.matches.length / 2) + matchIdx;
+                        return renderMatchItem(group, match, actualIdx);
+                      })}
                   </div>
                 </div>
               </div>
@@ -454,6 +708,13 @@ export default function GroupStageBracket({
           );
         })}
       </div>
+
+      <ScheduleMatchesModal
+        isOpen={showScheduleModal}
+        matches={pendingMatches}
+        onClose={() => setShowScheduleModal(false)}
+        onConfirm={handleScheduleConfirm}
+      />
     </div>
   );
 }

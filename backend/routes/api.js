@@ -90,6 +90,8 @@ router.get('/tournaments/:id/group-matches', tournamentController.getGroupMatche
 router.get('/tournaments/:id/bracket-data', tournamentController.getBracketData);
 router.put('/tournaments/:id/group-matches/:matchId', tournamentController.updateGroupMatches);
 router.post('/tournaments/:id/initialize-group-matches', tournamentController.createGroupMatches);
+router.post('/tournaments/:id/group-matches/schedule', authMiddleware, tournamentController.scheduleGroupMatches);
+router.post('/tournaments/:id/group-matches/ensure', authMiddleware, tournamentController.ensureGroupMatches);
 // GET /api/tournaments/:id/round-best-of
 router.get('/tournaments/:id/round-best-of', async (req, res) => {
   try {

@@ -490,6 +490,13 @@ const tournamentController = {
         return res.status(404).json({ message: 'Match not found.' });
       }
 
+      // Chỉ cho phép cập nhật điểm khi trận đã được đưa vào lịch (status "đang diễn ra")
+      if (!match.scheduledTime) {
+        return res.status(403).json({
+          message: 'Trận đấu chưa được lên lịch. Hãy chọn cặp đấu sẽ diễn ra hôm nay trước.',
+        });
+      }
+
       const safeA = Number.isFinite(Number(teamAScore)) ? Math.max(0, parseInt(teamAScore, 10)) : 0;
       const safeB = Number.isFinite(Number(teamBScore)) ? Math.max(0, parseInt(teamBScore, 10)) : 0;
 
@@ -522,6 +529,110 @@ const tournamentController = {
       res.json({ message: 'Match result updated.', match });
     } catch (error) {
       res.status(500).json({ message: 'Failed to update match.', error: error.message });
+    }
+  },
+
+// POST /api/tournaments/:id/group-matches/ensure
+  // Body: { pairs: [{ groupId, groupName, teamAId, teamAName, teamBId, teamBName }] }
+  // Tạo các trận đấu còn thiếu trong DB cho các cặp đã đăng ký (idempotent).
+  // Bracket có thể bị "out of sync" khi data DB chỉ có 1 phần các cặp đấu vì lý do nào đó.
+  async ensureGroupMatches(req, res) {
+    try {
+      const { id } = req.params;
+      const { pairs } = req.body;
+
+      if (!Array.isArray(pairs)) {
+        return res.status(400).json({ message: 'pairs phải là một mảng.' });
+      }
+
+      const tournament = await Tournament.findByPk(id);
+      if (!tournament) {
+        return res.status(404).json({ message: 'Tournament not found.' });
+      }
+      if (tournament.createdBy !== req.user.id) {
+        return res.status(403).json({ message: 'You are not the creator of this tournament.' });
+      }
+
+      const bestOfSetting = await TournamentRoundBestOf.findOne({
+        where: { tournamentId: id, formatType: 'group', roundNumber: 1 },
+      });
+      const bestOf = bestOfSetting?.bestOf || 3;
+
+      const existing = await GroupMatch.findAll({ where: { tournamentId: id } });
+      const created = [];
+
+      for (const pair of pairs) {
+        if (!pair || !pair.teamAId || !pair.teamBId) continue;
+        const dup = existing.find(
+          (m) =>
+            (m.teamAId === pair.teamAId && m.teamBId === pair.teamBId) ||
+            (m.teamAId === pair.teamBId && m.teamBId === pair.teamAId)
+        );
+        if (dup) continue;
+
+        const newMatch = await GroupMatch.create({
+          tournamentId: id,
+          groupId: pair.groupId,
+          groupName: pair.groupName,
+          teamAId: pair.teamAId,
+          teamAName: pair.teamAName || '',
+          teamBId: pair.teamBId,
+          teamBName: pair.teamBName || '',
+          bestOf,
+          isCompleted: false,
+          teamAScore: 0,
+          teamBScore: 0,
+        });
+        created.push(newMatch);
+      }
+
+      res.json({ message: 'Ensured.', createdCount: created.length });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to ensure matches.', error: error.message });
+    }
+  },
+
+// POST /api/tournaments/:id/group-matches/schedule
+  // Body: { matchIds: number[], scheduledDate?: string (ISO) }
+  // Đưa các trận từ trạng thái "chưa diễn ra" → "đang diễn ra" bằng cách set scheduledTime.
+  async scheduleGroupMatches(req, res) {
+    try {
+      const { id } = req.params;
+      const { matchIds, scheduledDate } = req.body;
+
+      if (!Array.isArray(matchIds) || matchIds.length === 0) {
+        return res.status(400).json({ message: 'Cần chọn ít nhất 1 trận.' });
+      }
+
+      const tournament = await Tournament.findByPk(id);
+      if (!tournament) {
+        return res.status(404).json({ message: 'Tournament not found.' });
+      }
+      if (tournament.createdBy !== req.user.id) {
+        return res.status(403).json({ message: 'You are not the creator of this tournament.' });
+      }
+
+      const when = scheduledDate ? new Date(scheduledDate) : new Date();
+      if (isNaN(when.getTime())) {
+        return res.status(400).json({ message: 'Ngày lên lịch không hợp lệ.' });
+      }
+
+      // Chỉ ảnh hưởng tới các trận chưa hoàn thành và chưa có lịch
+      const [affected] = await GroupMatch.update(
+        { scheduledTime: when },
+        {
+          where: {
+            id: matchIds,
+            tournamentId: id,
+            isCompleted: false,
+            scheduledTime: null,
+          },
+        }
+      );
+
+      res.json({ message: 'Đã cập nhật lịch thi đấu.', scheduledCount: affected, scheduledTime: when });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to schedule matches.', error: error.message });
     }
   },
 

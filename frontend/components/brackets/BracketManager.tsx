@@ -254,6 +254,17 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     createBracketWithGroupCount(newGroupCount);
   };
 
+  // Mở modal chia bảng từ trong GroupStageBracket (sau khi bracket đã tồn tại)
+  // Cảnh báo creator vì backend sẽ xoá toàn bộ kết quả trận cũ khi tái khởi tạo
+  const handleReopenSplitModal = () => {
+    if (!isCreator) return;
+    if (participantList.length < 2) {
+      toast.error('Cần ít nhất 2 đội/người chơi để chia bảng');
+      return;
+    }
+    setShowSplitModal(true);
+  };
+
   const renderBracketContent = () => {
     if (loading) {
       return (
@@ -307,6 +318,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
             groupColumns={tournament.groupColumns || undefined}
             bestOf={groupBestOf}
             isReadOnly={!isCreator}
+            onSplitGroups={isCreator ? handleReopenSplitModal : undefined}
           />
         );
       

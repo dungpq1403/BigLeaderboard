@@ -14,6 +14,7 @@ const tournamentController = require('../controller/tournamentController');
 const registrationController = require('../controller/registrationController');
 const Tournament = require('../models/Tournament');
 const TournamentRoundBestOf = require('../models/TournamentRoundBestOf');
+const GroupMatch = require('../models/GroupMatch');
 const uploadController = require('../controller/uploadController');
 
 // Cấu hình multer cho tournament image
@@ -133,6 +134,36 @@ router.put('/tournaments/:id/round-best-of', authMiddleware, async (req, res) =>
         bestOf: round.bestOf,
       }));
       await TournamentRoundBestOf.bulkCreate(roundData);
+
+      // Sync best_of của group_matches đã tồn tại + tính lại isCompleted/winner
+      const groupBO = roundBestOfs.find(
+        (r) => r.formatType === 'group' && Number(r.roundNumber) === 1
+      )?.bestOf;
+      if (groupBO) {
+        const matches = await GroupMatch.findAll({ where: { tournamentId: id } });
+        const neededWins = Math.ceil(groupBO / 2);
+        await Promise.all(
+          matches.map(async (m) => {
+            const a = m.teamAScore || 0;
+            const b = m.teamBScore || 0;
+            let winnerId = null;
+            let winnerName = null;
+            if (a >= neededWins && a > b) {
+              winnerId = m.teamAId;
+              winnerName = m.teamAName;
+            } else if (b >= neededWins && b > a) {
+              winnerId = m.teamBId;
+              winnerName = m.teamBName;
+            }
+            m.bestOf = groupBO;
+            m.winnerId = winnerId;
+            m.winnerName = winnerName;
+            m.isCompleted = winnerId !== null;
+            m.completedAt = m.isCompleted ? m.completedAt || new Date() : null;
+            await m.save();
+          })
+        );
+      }
     }
     
     res.json({ message: 'Round best of settings updated successfully.' });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
 import styles from './GroupStageBracket.module.css';
 import { calculateGroupStageStats, Match, TeamStats } from '@/utils/GroupStageScoring';
 
@@ -101,10 +102,16 @@ export default function GroupStageBracket({
 
   // Lưu kết quả trận đấu vào API
   const saveMatchResult = async (matchId: string, teamAScore: number, teamBScore: number, winnerId: string | null) => {
+    // Chặn các id tạm do frontend tạo (vd: "match-...") để tránh gọi API thừa và báo lỗi rõ ràng cho người dùng
+    if (typeof matchId === 'string' && matchId.startsWith('match-')) {
+      toast.error('Trận đấu này chưa được khởi tạo trong CSDL. Hãy tạo lại nhánh đấu.');
+      return false;
+    }
+
     try {
       const session = localStorage.getItem('authSession');
       if (!session) {
-        console.error('Not authenticated');
+        toast.error('Bạn cần đăng nhập để cập nhật kết quả');
         return false;
       }
       
@@ -119,9 +126,14 @@ export default function GroupStageBracket({
         body: JSON.stringify({ teamAScore, teamBScore, winnerId }),
       });
       
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        toast.error(errBody?.message || 'Không thể lưu kết quả trận đấu');
+      }
       return response.ok;
     } catch (error) {
       console.error('Failed to save match result:', error);
+      toast.error('Có lỗi xảy ra khi lưu kết quả');
       return false;
     }
   };
@@ -195,24 +207,23 @@ export default function GroupStageBracket({
   const updateMatchScore = async (groupId: string, matchIndex: number, teamAScore: number, teamBScore: number) => {
     setUpdating(true);
     let winnerId: string | null = null;
-    
+
     const updatedGroups = groups.map(group => {
       if (group.id !== groupId) return group;
-      
+
       const updatedMatches = [...group.matches];
       const match = updatedMatches[matchIndex];
-      
-      // Xác định người thắng
+
+      // Chỉ đánh dấu hoàn thành khi có 1 đội ĐẠT ngưỡng VÀ dẫn trước (tránh case 4-4 ở BO7)
       const neededWins = Math.ceil(bestOf / 2);
-      
-      if (teamAScore >= neededWins) {
+      if (teamAScore >= neededWins && teamAScore > teamBScore) {
         winnerId = match.teamAId;
-      } else if (teamBScore >= neededWins) {
+      } else if (teamBScore >= neededWins && teamBScore > teamAScore) {
         winnerId = match.teamBId;
       }
-      
-      const isCompleted = teamAScore >= neededWins || teamBScore >= neededWins;
-      
+
+      const isCompleted = winnerId !== null;
+
       updatedMatches[matchIndex] = {
         ...match,
         teamAScore,
@@ -220,21 +231,21 @@ export default function GroupStageBracket({
         winnerId,
         isCompleted,
       };
-      
+
       return {
         ...group,
         matches: updatedMatches,
       };
     });
-    
+
     setGroups(updatedGroups);
-    
-    // Lưu vào API
+
+    // Lưu vào API (server sẽ tự tính lại isCompleted/winner từ bestOf trong DB)
     const match = groups.find(g => g.id === groupId)?.matches[matchIndex];
     if (match) {
       await saveMatchResult(match.id, teamAScore, teamBScore, winnerId);
     }
-    
+
     if (onGroupChange) onGroupChange(updatedGroups);
     setUpdating(false);
   };

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import RegistrationForm from '@/components/RegistrationForm';
+import RegistrationForm from '@/components/registration/RegistrationForm';
 import { toast } from 'react-toastify';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";

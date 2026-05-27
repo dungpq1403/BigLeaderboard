@@ -8,6 +8,44 @@ const User = require('../models/User');
 const path = require('path');
 const fs = require('fs');
 
+// Đồng bộ cột best_of của group_matches theo TournamentRoundBestOf
+// và tính lại isCompleted/winnerId/winnerName/completedAt vì ngưỡng thắng thay đổi
+// khi BO đổi (vd: 3-0 hoàn thành ở BO5 nhưng chưa hoàn thành ở BO7).
+async function syncGroupMatchesBestOf(tournamentId, roundBestOfs) {
+  if (!Array.isArray(roundBestOfs) || roundBestOfs.length === 0) return;
+
+  const groupBO = roundBestOfs.find(
+    (r) => r.formatType === 'group' && Number(r.roundNumber) === 1
+  )?.bestOf;
+  if (!groupBO) return;
+
+  const matches = await GroupMatch.findAll({ where: { tournamentId } });
+  if (matches.length === 0) return;
+
+  const neededWins = Math.ceil(groupBO / 2);
+  await Promise.all(
+    matches.map(async (m) => {
+      const a = m.teamAScore || 0;
+      const b = m.teamBScore || 0;
+      let winnerId = null;
+      let winnerName = null;
+      if (a >= neededWins && a > b) {
+        winnerId = m.teamAId;
+        winnerName = m.teamAName;
+      } else if (b >= neededWins && b > a) {
+        winnerId = m.teamBId;
+        winnerName = m.teamBName;
+      }
+      m.bestOf = groupBO;
+      m.winnerId = winnerId;
+      m.winnerName = winnerName;
+      m.isCompleted = winnerId !== null;
+      m.completedAt = m.isCompleted ? m.completedAt || new Date() : null;
+      await m.save();
+    })
+  );
+}
+
 const tournamentController = {
   // GET /api/tournaments/:id
   async getTournamentById(req, res) {
@@ -381,6 +419,9 @@ const tournamentController = {
           bestOf: round.bestOf,
         }));
         await TournamentRoundBestOf.bulkCreate(roundData);
+
+        // Sync group_matches.best_of theo BO mới và tính lại trạng thái hoàn thành
+        await syncGroupMatchesBestOf(tournament.id, roundBestOfs);
       }
   
       // Cập nhật contacts (xóa cũ, thêm mới)
@@ -439,31 +480,45 @@ const tournamentController = {
   async updateGroupMatches (req, res) {
     try {
       const { id, matchId } = req.params;
-      const { teamAScore, teamBScore, winnerId } = req.body;
-      
+      const { teamAScore, teamBScore } = req.body;
+
       const match = await GroupMatch.findOne({
         where: { id: matchId, tournamentId: id },
       });
-      
+
       if (!match) {
         return res.status(404).json({ message: 'Match not found.' });
       }
-      
-      // Cập nhật kết quả
-      match.teamAScore = teamAScore;
-      match.teamBScore = teamBScore;
-      match.winnerId = winnerId;
-      match.isCompleted = true;
-      match.completedAt = new Date();
-      
-      if (winnerId === match.teamAId) {
-        match.winnerName = match.teamAName;
-      } else if (winnerId === match.teamBId) {
-        match.winnerName = match.teamBName;
+
+      const safeA = Number.isFinite(Number(teamAScore)) ? Math.max(0, parseInt(teamAScore, 10)) : 0;
+      const safeB = Number.isFinite(Number(teamBScore)) ? Math.max(0, parseInt(teamBScore, 10)) : 0;
+
+      // Tính lại isCompleted/winner từ bestOf lưu trong DB, không tin tưởng client
+      // → tránh trường hợp 0-2 trong BO7 mà vẫn bị đánh dấu hoàn thành rồi khoá input sau F5.
+      const bestOf = match.bestOf || 3;
+      const neededWins = Math.ceil(bestOf / 2);
+
+      let computedWinnerId = null;
+      let computedWinnerName = null;
+      if (safeA >= neededWins && safeA > safeB) {
+        computedWinnerId = match.teamAId;
+        computedWinnerName = match.teamAName;
+      } else if (safeB >= neededWins && safeB > safeA) {
+        computedWinnerId = match.teamBId;
+        computedWinnerName = match.teamBName;
       }
-      
+
+      const isCompleted = computedWinnerId !== null;
+
+      match.teamAScore = safeA;
+      match.teamBScore = safeB;
+      match.winnerId = computedWinnerId;
+      match.winnerName = computedWinnerName;
+      match.isCompleted = isCompleted;
+      match.completedAt = isCompleted ? new Date() : null;
+
       await match.save();
-      
+
       res.json({ message: 'Match result updated.', match });
     } catch (error) {
       res.status(500).json({ message: 'Failed to update match.', error: error.message });

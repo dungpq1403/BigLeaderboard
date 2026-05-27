@@ -24,8 +24,8 @@ export default function SplitGroupsModal({ isOpen, teamCount, onConfirm, onClose
   if (!isOpen || !mounted) return null;
 
   const handleConfirm = () => {
-    if (groupCount < 2) {
-      toast.error('Số lượng bảng phải ít nhất là 2');
+    if (groupCount < 1) {
+      toast.error('Số lượng bảng phải ít nhất là 1');
       return;
     }
     if (groupCount > teamCount) {
@@ -46,13 +46,13 @@ export default function SplitGroupsModal({ isOpen, teamCount, onConfirm, onClose
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <h3 className={styles.title}>🧩 Chia bảng đấu</h3>
+          <h3 className={styles.title}>🧩 Chọn số bảng đấu</h3>
           <button className={styles.closeBtn} onClick={onClose}>✕</button>
         </div>
         
         <div className={styles.body}>
           <p className={styles.message}>
-            Số lượng đội tham gia ({teamCount} đội) khá lớn. Bạn có muốn chia thành nhiều bảng để dễ quản lý không?
+            Có {teamCount} đội/người chơi. Bạn muốn chia thành mấy bảng? Hệ thống sẽ tạo các trận vòng tròn 1 lượt trong từng bảng.
           </p>
           
           <div className={styles.optionGroup}>

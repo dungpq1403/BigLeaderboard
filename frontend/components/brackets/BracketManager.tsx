@@ -222,6 +222,18 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
 
         setGroupMatches(Array.isArray(data.matches) ? data.matches : []);
 
+        // Với giải KHÔNG có vòng bảng, bracket luôn sẵn sàng — các thể thức như
+        // single_elimination được sinh động từ participants, không cần khởi tạo
+        // qua modal chia bảng. Đồng thời dọn localStorage cũ (nếu user vừa edit
+        // bỏ format 'group') để tránh leftover keys gây nhiễu.
+        if (!hasGroupFormat) {
+          localStorage.removeItem(getBracketCreatedKey(tournamentId));
+          localStorage.removeItem(getGroupsCountKey(tournamentId));
+          setBracketCreated(true);
+          setGroupCount(1);
+          return;
+        }
+
         const hasMatches = Array.isArray(data.matches) && data.matches.length > 0;
         if (hasMatches) {
           localStorage.setItem(getBracketCreatedKey(tournamentId), 'true');
@@ -264,6 +276,12 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     label: BRACKET_META[type].label,
     icon: BRACKET_META[type].icon,
   }));
+
+  // Modal "Chia bảng" (SplitGroupsModal) chỉ áp dụng cho thể thức "Vòng bảng".
+  // Các thể thức khác (single_elimination, double_elimination, swiss) tự xây sơ
+  // đồ động từ danh sách participants nên KHÔNG cần bước khởi tạo bằng modal.
+  // Nếu giải không có format 'group' → bracket coi như sẵn sàng hiển thị ngay.
+  const hasGroupFormat = normalizedFormats.includes('group');
 
   // Dùng làm dependency ổn định cho effect: dùng normalizedFormats (đã dedupe + sort
   // anchor) thay vì raw `tournament.formats` để effect chỉ chạy lại khi thứ tự hiển thị
@@ -383,6 +401,15 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
   const handleCreateBracket = () => {
     if (!isCreator) return;
 
+    // Modal chia bảng chỉ dành cho thể thức "Vòng bảng". Với các thể thức khác,
+    // bracket đã được fetchBracketData đánh dấu sẵn sàng (xem ở trên) nên về lý
+    // thuyết nút "Tạo nhánh đấu" không hiển thị; guard này là biện pháp phòng vệ
+    // tránh gọi API initialize-group-matches sai context.
+    if (!hasGroupFormat) {
+      setBracketCreated(true);
+      return;
+    }
+
     // Với giải đông đội, hỏi người tổ chức số bảng trước khi tạo
     if (participantList.length > 4) {
       setShowSplitModal(true);
@@ -409,6 +436,9 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
   // Cảnh báo creator vì backend sẽ xoá toàn bộ kết quả trận cũ khi tái khởi tạo
   const handleReopenSplitModal = () => {
     if (!isCreator) return;
+    // Chỉ thể thức "Vòng bảng" mới có khái niệm chia bảng → khoá hành động này
+    // ở các thể thức khác (single_elim, double_elim, swiss).
+    if (!hasGroupFormat) return;
     if (participantList.length < 2) {
       toast.error('Cần ít nhất 2 đội/người chơi để chia bảng');
       return;
@@ -506,6 +536,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
             bestOf={seBestOf}
             isReadOnly={!isCreator}
             formatNames={formatNames}
+            startDate={tournament.startDate}
           />
         );
       }
@@ -581,12 +612,14 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
         {renderBracketContent()}
       </div>
 
-      <SplitGroupsModal
-        isOpen={showSplitModal}
-        teamCount={participantCount}
-        onConfirm={handleSplitConfirm}
-        onClose={() => setShowSplitModal(false)}
-      />
+      {hasGroupFormat && (
+        <SplitGroupsModal
+          isOpen={showSplitModal}
+          teamCount={participantCount}
+          onConfirm={handleSplitConfirm}
+          onClose={() => setShowSplitModal(false)}
+        />
+      )}
     </div>
   );
 }

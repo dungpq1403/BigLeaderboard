@@ -461,6 +461,11 @@ const tournamentController = {
         }
       }
 
+      // Snapshot lại formats CŨ TRƯỚC khi update để diff sau khi đã ghi giá trị
+      // mới. Cần biết user vừa BỎ thể thức nào để dọn dữ liệu trận đã sinh ra
+      // theo thể thức đó (tránh dữ liệu rác/standings trống lơ lửng ở UI cũ).
+      const oldFormats = Array.isArray(tournament.formats) ? [...tournament.formats] : [];
+
       // Trong POST /tournaments và PUT /tournaments/:id
       if (participantType === 'team') {
         if (!teamMembers || teamMembers < 1) {
@@ -495,6 +500,24 @@ const tournamentController = {
         teamSubstitutes: teamSubstitutes !== undefined ? teamSubstitutes : tournament.teamSubstitutes,
         thirdPlaceMatch: thirdPlaceMatch !== undefined ? thirdPlaceMatch : tournament.thirdPlaceMatch,
       });
+
+      // Dọn dữ liệu trận đấu khi user BỎ CHỌN một thể thức mà trước đó đã có
+      // matches/scores được khởi tạo. Nếu không dọn, các bảng dữ liệu này sẽ
+      // trở thành "mồ côi": không còn UI nào render chúng nhưng vẫn nằm trong DB,
+      // gây nhiễu nếu sau này user thêm lại thể thức đó (matches cũ "đội mồ" hiện lên).
+      const newFormatsArr = Array.isArray(tournament.formats) ? tournament.formats : [];
+
+      // 1) Bỏ "Vòng bảng" → xoá toàn bộ cặp đấu vòng bảng đã được khởi tạo qua
+      //    POST /initialize-group-matches của giải đấu này.
+      if (oldFormats.includes('group') && !newFormatsArr.includes('group')) {
+        await GroupMatch.destroy({ where: { tournamentId: tournament.id } });
+      }
+
+      // 2) Bỏ "Đấu loại trực tiếp" → xoá tỉ số đã lưu cho các trận single elim.
+      //    Bracket được dựng động từ participants, nên chỉ có scores là persisted.
+      if (oldFormats.includes('single_elimination') && !newFormatsArr.includes('single_elimination')) {
+        await SingleEliminationMatch.destroy({ where: { tournamentId: tournament.id } });
+      }
 
       if (roundBestOfs && Array.isArray(roundBestOfs) && roundBestOfs.length > 0) {
         await TournamentRoundBestOf.destroy({ where: { tournamentId: tournament.id } });

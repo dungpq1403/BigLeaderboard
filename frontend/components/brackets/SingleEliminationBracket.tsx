@@ -66,6 +66,9 @@ interface SingleEliminationBracketProps {
   bestOf?: number;
   isReadOnly?: boolean;
   formatNames?: Record<string, string>;
+  // Ngày bắt đầu giải đấu (ISO string). Khi truyền vào, score editing sẽ bị
+  // khoá cho tới khi đến ngày này (đồng bộ với hành vi ở vòng bảng).
+  startDate?: string;
 }
 
 // =====================================================
@@ -355,6 +358,7 @@ export default function SingleEliminationBracket({
   bestOf = 3,
   isReadOnly = false,
   formatNames = {},
+  startDate,
 }: SingleEliminationBracketProps) {
   // Tỉ số + BO cho từng trận (key = matchId), nguồn dữ liệu chính là DB.
   const [matchScores, setMatchScores] = useState<Record<number, MatchScore>>({});
@@ -405,6 +409,32 @@ export default function SingleEliminationBracket({
       cancelled = true;
     };
   }, [tournamentId, bestOf]);
+
+  // Giải đấu đã đến ngày bắt đầu hay chưa (so sánh theo ngày, bỏ qua giờ).
+  // Khi chưa đến ngày bắt đầu, người dùng KHÔNG được nhập/sửa tỉ số — đồng bộ
+  // với hành vi của vòng bảng nơi mọi thao tác lên lịch cũng bị khoá trước
+  // startDate. Việc khoá trên UI giúp tránh dữ liệu rác trước khi giải bắt đầu;
+  // backend vẫn nên có kiểm tra tương ứng nếu cần đảm bảo an toàn tuyệt đối.
+  const isBeforeStartDate = useMemo(() => {
+    if (!startDate) return false;
+    const start = new Date(startDate);
+    if (isNaN(start.getTime())) return false;
+    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return today < startDay;
+  }, [startDate]);
+
+  const formattedStartDate = useMemo(() => {
+    if (!startDate) return '';
+    const d = new Date(startDate);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }, [startDate]);
 
   // ---- Xác định vị trí của single_elimination trong chuỗi thể thức ----
   const stageIndex = formats.indexOf('single_elimination');
@@ -589,6 +619,15 @@ export default function SingleEliminationBracket({
   const openEditModal = useCallback(
     (matchId: number) => {
       if (isReadOnly) return;
+      // Khoá nhập/sửa tỉ số trước ngày bắt đầu giải đấu để tránh dữ liệu rác.
+      if (isBeforeStartDate) {
+        toast.info(
+          `Chưa đến ngày bắt đầu giải đấu${
+            formattedStartDate ? ` (${formattedStartDate})` : ''
+          }. Bạn chưa thể nhập tỉ số.`,
+        );
+        return;
+      }
       const tree = buildTree(matchId);
       if (!tree.team1.name || !tree.team2.name) {
         toast.info('Cần xác định cả 2 đội trước khi nhập tỉ số.');
@@ -600,7 +639,7 @@ export default function SingleEliminationBracket({
       setFormBestOf(current?.bestOf ?? bestOf);
       setEditingMatchId(matchId);
     },
-    [isReadOnly, buildTree, matchScores, bestOf],
+    [isReadOnly, isBeforeStartDate, formattedStartDate, buildTree, matchScores, bestOf],
   );
 
   const closeEditModal = useCallback(() => {
@@ -830,7 +869,20 @@ export default function SingleEliminationBracket({
         </div>
       )}
 
-      {!isReadOnly && (
+      {!isReadOnly && isBeforeStartDate && (
+        <div className={styles.note}>
+          🔒 Chưa đến ngày bắt đầu giải đấu
+          {formattedStartDate && (
+            <>
+              {' '}
+              (<strong>{formattedStartDate}</strong>)
+            </>
+          )}
+          . Bạn chỉ có thể nhập tỉ số khi giải bắt đầu.
+        </div>
+      )}
+
+      {!isReadOnly && !isBeforeStartDate && (
         <div className={styles.hint}>
           💡 Nhấn vào 1 cặp đấu để nhập tỉ số hoặc đổi BO riêng cho trận đó.
         </div>

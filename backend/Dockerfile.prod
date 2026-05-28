@@ -1,11 +1,20 @@
 FROM node:18-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
 
-FROM node:18-alpine
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+FROM node:18-alpine AS runner
 WORKDIR /app
-COPY --from=builder /app/node_modules ./node_modules
-COPY . .
+ENV NODE_ENV=production
+
+RUN addgroup -g 1001 -S nodejs && adduser -S nodeapp -u 1001
+
+COPY --from=builder --chown=nodeapp:nodejs /app/node_modules ./node_modules
+COPY --chown=nodeapp:nodejs . .
+
+USER nodeapp
+
 EXPOSE 5000
+
 CMD ["node", "index.js"]

@@ -3,12 +3,11 @@ import Link from 'next/link';
 import styles from './page.module.css';
 import TournamentList from '@/components/tournament/TournamentList';
 import CreateTournamentButton from '@/components/tournament/CreateTournamentButton';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { getApiBase } from '@/lib/api';
 
 async function getGameData(id: string) {
   try {
-    const response = await fetch(`${API_BASE}/games/${id}`, {
+    const response = await fetch(`${getApiBase()}/games/${id}`, {
       cache: 'no-store',
     });
     
@@ -25,7 +24,7 @@ async function getGameData(id: string) {
 
 export async function generateStaticParams() {
   try {
-    const response = await fetch(`${API_BASE}/games`);
+    const response = await fetch(`${getApiBase()}/games`);
     const games = await response.json();
     return games.map((game: any) => ({ id: game.id.toString() }));
   } catch (error) {

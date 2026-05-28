@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mysql:
     image: mysql:8.0
@@ -10,12 +8,18 @@ services:
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "33077:3306"
+    # Không expose port MySQL ra ngoài host trong prod (chỉ accessible trong network nội bộ).
+    # Nếu cần admin truy cập, dùng SSH tunnel hoặc thêm một tool như phpMyAdmin.
     volumes:
       - mysql_data_prod:/var/lib/mysql
     networks:
       - solo_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   backend:
     build:
@@ -26,13 +30,21 @@ services:
     ports:
       - "5000:5000"
     environment:
+      - NODE_ENV=production
       - PORT=5000
       - DB_HOST=mysql
+      - DB_PORT=3306
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
+      - JWT_SECRET=${JWT_SECRET}
+    volumes:
+      # Persist uploaded files. Lưu ý: imageUpload.js ghi vào ../../frontend/public/uploads
+      # từ /app/routes => /frontend/public/uploads
+      - uploads_data:/frontend/public/uploads
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     networks:
       - solo_network
 
@@ -40,12 +52,20 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+      args:
+        # NEXT_PUBLIC_* phải truyền tại build time
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     container_name: solo_frontend_prod
     restart: always
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:5000/api   # gọi qua tên service trong nội bộ network
+      - NODE_ENV=production
+      # URL Next.js Server Components / SSR dùng (gọi qua Docker network nội bộ)
+      - INTERNAL_API_URL=http://backend:5000/api
+    volumes:
+      # Cho phép frontend serve các ảnh upload do backend ghi vào
+      - uploads_data:/app/public/uploads
     depends_on:
       - backend
     networks:
@@ -57,3 +77,4 @@ networks:
 
 volumes:
   mysql_data_prod:
+  uploads_data:

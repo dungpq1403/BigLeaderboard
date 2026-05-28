@@ -15,6 +15,7 @@ interface Tournament {
   participantType: string;
   maxParticipants: number;
   groupColumns?: any[];
+  startDate?: string;
 }
 
 interface BracketManagerProps {
@@ -318,6 +319,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
             groupColumns={tournament.groupColumns || undefined}
             bestOf={groupBestOf}
             isReadOnly={!isCreator}
+            startDate={tournament.startDate}
             onSplitGroups={isCreator ? handleReopenSplitModal : undefined}
           />
         );

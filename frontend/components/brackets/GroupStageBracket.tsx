@@ -42,6 +42,7 @@ interface GroupStageBracketProps {
   groupColumns?: Column[];
   bestOf?: number;
   isReadOnly?: boolean;
+  startDate?: string;
   onGroupChange?: (groups: Group[]) => void;
   onSplitGroups?: () => void;
 }
@@ -60,6 +61,7 @@ export default function GroupStageBracket({
   groupColumns = [],
   bestOf = 3,
   isReadOnly = false,
+  startDate,
   onGroupChange, 
   onSplitGroups,
 }: GroupStageBracketProps) {
@@ -394,6 +396,28 @@ export default function GroupStageBracket({
     }
   };
 
+  // Giải đấu đã đến ngày bắt đầu hay chưa (so sánh theo ngày, bỏ qua giờ)
+  const isBeforeStartDate = useMemo(() => {
+    if (!startDate) return false;
+    const start = new Date(startDate);
+    if (isNaN(start.getTime())) return false;
+    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return today < startDay;
+  }, [startDate]);
+
+  const formattedStartDate = useMemo(() => {
+    if (!startDate) return '';
+    const d = new Date(startDate);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }, [startDate]);
+
   // Các trận chưa được lên lịch (status "chưa diễn ra")
   const pendingMatches: PendingMatch[] = useMemo(() => {
     const list: PendingMatch[] = [];
@@ -631,9 +655,11 @@ export default function GroupStageBracket({
               type="button"
               className={styles.scheduleBtn}
               onClick={() => setShowScheduleModal(true)}
-              disabled={scheduling || pendingMatches.length === 0}
+              disabled={scheduling || pendingMatches.length === 0 || isBeforeStartDate}
               title={
-                pendingMatches.length === 0
+                isBeforeStartDate
+                  ? `Chưa đến ngày bắt đầu giải đấu${formattedStartDate ? ` (${formattedStartDate})` : ''}`
+                  : pendingMatches.length === 0
                   ? 'Không còn cặp đấu nào ở trạng thái chưa diễn ra'
                   : 'Chọn các cặp đấu sẽ diễn ra hôm nay'
               }

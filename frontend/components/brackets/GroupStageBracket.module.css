@@ -4,6 +4,7 @@
   padding: 1rem;
   margin-bottom: 1rem;
   border: 1px solid rgba(245, 158, 11, 0.4);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
 }
 
 .header {
@@ -99,14 +100,8 @@
 
 .groupsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1rem;
-}
-
-@media (max-width: 768px) {
-  .groupsGrid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .groupCard {

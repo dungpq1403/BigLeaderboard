@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from './RoundBestOfManager.module.css';
 import BestOfSelector from './BestOfSelector';
 
@@ -26,62 +26,73 @@ export default function RoundBestOfManager({
 }: RoundBestOfManagerProps) {
   const [rounds, setRounds] = useState<RoundBestOf[]>([]);
 
-  // Khởi tạo danh sách vòng đấu dựa trên formats
+  // Ref tránh notify lặp cùng 1 nội dung (sẽ gây loop khi parent setState xong và
+  // truyền value mới về với cùng nội dung).
+  const lastNotifiedKeyRef = useRef<string>('');
+
+  const buildKey = (list: { roundNumber: number; formatType: string; bestOf: number }[]) =>
+    list.map((r) => `${r.formatType}:${r.roundNumber}:${r.bestOf}`).join('|');
+
+  // Khởi tạo danh sách vòng đấu dựa trên formats.
+  // Mỗi format hiện tại chỉ tạo 1 entry BO duy nhất, áp dụng cho toàn bộ format đó
+  // (riêng double_elimination: 1 BO dùng chung cho cả nhánh thắng, nhánh thua và
+  // chung kết tổng — theo yêu cầu giữ cấu hình đơn giản, đồng nhất giữa các sub-bracket).
   useEffect(() => {
-    if (formats.length === 0) return;
+    if (formats.length === 0) {
+      setRounds([]);
+      const emptyKey = '';
+      if (value.length !== 0 && lastNotifiedKeyRef.current !== emptyKey) {
+        lastNotifiedKeyRef.current = emptyKey;
+        onChange([]);
+      }
+      return;
+    }
 
     const newRounds: RoundBestOf[] = [];
     let roundCounter = 1;
 
-    for (let i = 0; i < formats.length; i++) {
-      const format = formats[i];
+    for (const format of formats) {
       const formatName = formatNames[format] || format;
-      
-      // Mỗi format có thể có nhiều vòng (ví dụ single elimination có nhiều vòng)
-      if (format === 'single_elimination') {
-        // Tạm thời chỉ tạo 1 vòng, sau này có thể config số vòng
-        newRounds.push({
-          roundNumber: roundCounter++,
-          formatType: format,
-          bestOf: value.find(r => r.formatType === format && r.roundNumber === roundCounter - 1)?.bestOf || 3,
-          roundLabel: `${formatName}`,
-        });
-      } else if (format === 'double_elimination') {
-        newRounds.push({
-          roundNumber: roundCounter++,
-          formatType: format,
-          bestOf: value.find(r => r.formatType === format && r.roundNumber === roundCounter - 1)?.bestOf || 3,
-          roundLabel: `${formatName} (Nhánh thắng)`,
-        });
-        newRounds.push({
-          roundNumber: roundCounter++,
-          formatType: format,
-          bestOf: value.find(r => r.formatType === format && r.roundNumber === roundCounter - 1)?.bestOf || 3,
-          roundLabel: `${formatName} (Nhánh thua)`,
-        });
-        newRounds.push({
-          roundNumber: roundCounter++,
-          formatType: format,
-          bestOf: value.find(r => r.formatType === format && r.roundNumber === roundCounter - 1)?.bestOf || 5,
-          roundLabel: `${formatName} (Chung kết tổng)`,
-        });
-      } else {
-        newRounds.push({
-          roundNumber: roundCounter++,
-          formatType: format,
-          bestOf: value.find(r => r.formatType === format && r.roundNumber === roundCounter - 1)?.bestOf || 3,
-          roundLabel: formatName,
-        });
+      const roundNumber = roundCounter++;
+      const existing = value.find(
+        (r) => r.formatType === format && r.roundNumber === roundNumber,
+      );
+
+      let roundLabel = formatName;
+      if (format === 'double_elimination') {
+        // Hint cho user biết 1 BO này phủ cả nhánh thắng + thua + chung kết
+        roundLabel = `${formatName} (áp dụng cho cả nhánh thắng, nhánh thua và CK tổng)`;
       }
+
+      newRounds.push({
+        roundNumber,
+        formatType: format,
+        bestOf: existing?.bestOf ?? 3,
+        roundLabel,
+      });
     }
 
     setRounds(newRounds);
+
+    // Nếu cấu trúc value đầu vào khác với newRounds (vd: data DB cũ có 3 entries
+    // cho double_elimination), notify parent để state được normalize ngay, đỡ
+    // phải đợi user thay đổi BO mới ghi đè dữ liệu cũ.
+    const newKey = buildKey(newRounds);
+    const oldKey = buildKey(value);
+    if (newKey !== oldKey && newKey !== lastNotifiedKeyRef.current) {
+      lastNotifiedKeyRef.current = newKey;
+      onChange(newRounds);
+    }
+    // onChange và value cố tình không nằm trong deps để effect chỉ chạy khi
+    // formats/formatNames thay đổi (tránh vòng lặp setState ↔ onChange).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formats, formatNames]);
 
   const handleBestOfChange = (index: number, newBestOf: number) => {
     const updated = [...rounds];
     updated[index] = { ...updated[index], bestOf: newBestOf };
     setRounds(updated);
+    lastNotifiedKeyRef.current = buildKey(updated);
     onChange(updated);
   };
 

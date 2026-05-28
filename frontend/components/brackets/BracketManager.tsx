@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react';
 import styles from './BracketManager.module.css';
 import GroupStageBracket from './GroupStageBracket';
+import SingleEliminationBracket from './SingleEliminationBracket';
 import SplitGroupsModal from './SplitGroupsModal';
 import { toast } from 'react-toastify';
+import { useFormat } from '@/context/FormatContext';
+import { calculateGroupStageStats, Match as ScoringMatch } from '@/utils/GroupStageScoring';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
@@ -16,6 +19,8 @@ interface Tournament {
   maxParticipants: number;
   groupColumns?: any[];
   startDate?: string;
+  advancementSteps?: number[];
+  thirdPlaceMatch?: boolean;
 }
 
 interface BracketManagerProps {
@@ -33,17 +38,139 @@ interface RoundBestOf {
 
 type BracketType = 'group' | 'single_elimination' | 'double_elimination' | 'swiss';
 
+// Metadata cho từng loại nhánh đấu (label + icon). Dùng làm bảng tra cứu khi build
+// availableBrackets theo đúng thứ tự lưu trong tournament.formats.
+const BRACKET_META: Record<BracketType, { label: string; icon: string }> = {
+  group: { label: 'Vòng bảng', icon: '📊' },
+  swiss: { label: 'Vòng Swiss', icon: '🃏' },
+  single_elimination: { label: 'Đấu loại trực tiếp', icon: '⚡' },
+  double_elimination: { label: 'Nhánh thắng-thua', icon: '🔄' },
+};
+
+// Swiss và vòng bảng là "anchor format": chúng luôn đứng đầu chuỗi thể thức và
+// LOẠI TRỪ lẫn nhau (1 giải chỉ được dùng 1 trong 2). Đây là quy tắc nghiệp vụ
+// được enforce ở cả FormatOrderSelector (input) và BracketManager (display).
+const ANCHOR_FORMATS: ReadonlySet<BracketType> = new Set(['swiss', 'group']);
+
+const isAnchorFormat = (f: string): f is 'swiss' | 'group' =>
+  f === 'swiss' || f === 'group';
+
+// Chuẩn hoá thứ tự format để hiển thị tab:
+//  - Bỏ trùng (tránh data cũ có duplicate).
+//  - Bỏ entry không thuộc BRACKET_META (format không hỗ trợ).
+//  - Nếu có cả swiss và group (data cũ/data xấu), chỉ giữ cái xuất hiện trước.
+//  - Đảm bảo anchor (swiss/group) luôn nằm ở vị trí 0; thứ tự tương đối của các
+//    format không phải anchor được giữ nguyên theo input.
+function normalizeFormatOrder(formats: string[]): BracketType[] {
+  const result: BracketType[] = [];
+  let anchorPicked: BracketType | null = null;
+
+  for (const f of formats) {
+    if (!(f in BRACKET_META)) continue;
+    const t = f as BracketType;
+    if (result.includes(t)) continue;
+    if (isAnchorFormat(t)) {
+      if (anchorPicked) continue;
+      anchorPicked = t;
+    }
+    result.push(t);
+  }
+
+  // Đẩy anchor (nếu có) về vị trí 0, giữ nguyên thứ tự còn lại
+  if (anchorPicked) {
+    const idx = result.indexOf(anchorPicked);
+    if (idx > 0) {
+      result.splice(idx, 1);
+      result.unshift(anchorPicked);
+    }
+  }
+  return result;
+}
+
 const getStorageKey = (tournamentId: number) => `bracket_active_${tournamentId}`;
 const getGroupsCountKey = (tournamentId: number) => `bracket_groups_${tournamentId}`;
 const getBracketCreatedKey = (tournamentId: number) => `bracket_created_${tournamentId}`;
 
+// Tính danh sách đội đi tiếp từ vòng bảng dựa trên xếp hạng hiện tại.
+// - Gộp matches theo groupId
+// - Mỗi bảng: tính stats (calculateGroupStageStats) → lấy top K = ceil(total / numGroups)
+// - Sắp xếp ưu tiên theo hạng (tất cả nhất A,B,C... rồi nhì A,B,C...) để seeder chia nhánh
+//   tự động cho các đội cùng bảng tránh gặp nhau ở vòng đầu.
+function computeQualifiedFromGroups(
+  matches: any[],
+  participants: { id: string; name: string }[],
+  totalAdvancing: number,
+): { id: string; name: string }[] {
+  if (!matches || matches.length === 0 || totalAdvancing <= 0) return [];
+
+  const byGroup = new Map<string, any[]>();
+  matches.forEach((m) => {
+    const gid = m.groupId ? String(m.groupId) : null;
+    if (!gid) return;
+    if (!byGroup.has(gid)) byGroup.set(gid, []);
+    byGroup.get(gid)!.push(m);
+  });
+
+  const numGroups = byGroup.size;
+  if (numGroups === 0) return [];
+
+  const perGroup = Math.ceil(totalAdvancing / numGroups);
+  const sortedGroupIds = Array.from(byGroup.keys()).sort();
+  const participantsById = new Map(participants.map((p) => [p.id, p]));
+
+  const qualifiers: Array<{ id: string; name: string; rank: number; groupOrder: number }> = [];
+
+  sortedGroupIds.forEach((gid, groupOrder) => {
+    const groupMs = byGroup.get(gid)!;
+    const teamIds = new Set<string>();
+    groupMs.forEach((m) => {
+      teamIds.add(String(m.teamAId));
+      teamIds.add(String(m.teamBId));
+    });
+
+    const groupTeams = Array.from(teamIds).map((id) => {
+      const p = participantsById.get(id);
+      // Fallback name từ match data nếu participant chưa có
+      const nameFromMatch =
+        groupMs.find((m) => String(m.teamAId) === id)?.teamAName ||
+        groupMs.find((m) => String(m.teamBId) === id)?.teamBName ||
+        `Đội ${id}`;
+      return { id, name: p?.name || nameFromMatch };
+    });
+
+    const scoringMatches: ScoringMatch[] = groupMs.map((m) => ({
+      id: String(m.id),
+      teamAId: String(m.teamAId),
+      teamBId: String(m.teamBId),
+      teamAScore: m.teamAScore || 0,
+      teamBScore: m.teamBScore || 0,
+      winnerId: m.winnerId ? String(m.winnerId) : null,
+      isCompleted: !!m.isCompleted,
+    }));
+
+    const stats = calculateGroupStageStats(groupTeams, scoringMatches);
+    stats.slice(0, perGroup).forEach((s, rankIdx) => {
+      qualifiers.push({ id: s.id, name: s.name, rank: rankIdx + 1, groupOrder });
+    });
+  });
+
+  qualifiers.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return a.groupOrder - b.groupOrder;
+  });
+
+  return qualifiers.slice(0, totalAdvancing).map((q) => ({ id: q.id, name: q.name }));
+}
+
 export default function BracketManager({ tournamentId, tournament, isCreator = false }: BracketManagerProps) {
+  const { formatNames } = useFormat();
   const [activeBracket, setActiveBracket] = useState<BracketType | null>(null);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [groupCount, setGroupCount] = useState(1);
   const [isClient, setIsClient] = useState(false);
   const [bracketCreated, setBracketCreated] = useState(false);
   const [participantList, setParticipantList] = useState<{ id: string; name: string }[]>([]);
+  const [groupMatches, setGroupMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [bestOf, setBestOf] = useState<RoundBestOf[]>([]);
 
@@ -66,13 +193,14 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     fetchRoundBestOf();
   }, [])
     
+  // RoundBestOfManager lưu roundNumber là counter toàn cục (vd: group=1, single_elim=2),
+  // nên ta lọc theo formatType rồi lấy theo thứ tự cục bộ trong format đó.
   const getBestOfForFormat = (formatType: string, round: number = 1): number => {
-    // Tìm cấu hình cụ thể cho format và round
-    const specificSetting = bestOf.find(
-      r => r.formatType === formatType && r.roundNumber === round
-    );
-    if (specificSetting) return specificSetting.bestOf;
-
+    const ofFormat = bestOf
+      .filter(r => r.formatType === formatType)
+      .sort((a, b) => a.roundNumber - b.roundNumber);
+    const entry = ofFormat[round - 1];
+    if (entry) return entry.bestOf;
     return 3;
   };
 
@@ -91,7 +219,9 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
             name: p.name,
           })));
         }
-        
+
+        setGroupMatches(Array.isArray(data.matches) ? data.matches : []);
+
         const hasMatches = Array.isArray(data.matches) && data.matches.length > 0;
         if (hasMatches) {
           localStorage.setItem(getBracketCreatedKey(tournamentId), 'true');
@@ -115,6 +245,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
           setBracketCreated(false);
           setGroupCount(1);
           setActiveBracket(null);
+          setGroupMatches([]);
         }
       }
     } catch (error) {
@@ -124,38 +255,57 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     }
   };
 
-  // Khôi phục lựa chọn tab từ localStorage; trạng thái bracketCreated do DB quyết định
+  // availableBrackets được derive trực tiếp từ tournament.formats để tab hiển thị
+  // đúng theo thứ tự mà người tạo giải đã cấu hình ở modal Edit. Hàm
+  // normalizeFormatOrder() lo phần dedupe + đẩy anchor (swiss/group) lên đầu.
+  const normalizedFormats = normalizeFormatOrder(tournament.formats || []);
+  const availableBrackets = normalizedFormats.map(type => ({
+    type,
+    label: BRACKET_META[type].label,
+    icon: BRACKET_META[type].icon,
+  }));
+
+  // Dùng làm dependency ổn định cho effect: dùng normalizedFormats (đã dedupe + sort
+  // anchor) thay vì raw `tournament.formats` để effect chỉ chạy lại khi thứ tự hiển thị
+  // thực sự thay đổi, không bị fire false-positive do reference array mới mỗi render.
+  const formatsKey = normalizedFormats.join(',');
+
+  // Sync `activeBracket` với cấu hình hiện tại của giải đấu:
+  //  - Lần đầu mount: khôi phục từ localStorage (nếu giá trị còn hợp lệ).
+  //  - Khi user đổi format ở modal Edit: nếu activeBracket cũ không còn tồn tại
+  //    trong availableBrackets, fallback sang format đầu tiên có sẵn để tab/active
+  //    state khớp với tournament mới (sửa lỗi "đổi sang single elim nhưng UI vẫn
+  //    hiện vòng bảng").
+  //  - Đồng thời refetch bracket data để bracketCreated/groupMatches/participantList
+  //    sync với cấu hình mới.
   useEffect(() => {
     if (!isClient) return;
 
-    const savedBracket = localStorage.getItem(getStorageKey(tournamentId));
-    if (
-      savedBracket &&
-      (savedBracket === 'group' ||
-        savedBracket === 'single_elimination' ||
-        savedBracket === 'double_elimination' ||
-        savedBracket === 'swiss')
-    ) {
-      setActiveBracket(savedBracket as BracketType);
-    }
+    const isValidBracket = (b: string | null): b is BracketType =>
+      !!b && availableBrackets.some(ab => ab.type === b);
+
+    setActiveBracket(prev => {
+      if (isValidBracket(prev)) return prev;
+
+      const saved = localStorage.getItem(getStorageKey(tournamentId));
+      if (isValidBracket(saved)) return saved;
+
+      const fallback = availableBrackets[0]?.type ?? null;
+      if (fallback) {
+        localStorage.setItem(getStorageKey(tournamentId), fallback);
+      } else {
+        localStorage.removeItem(getStorageKey(tournamentId));
+      }
+      return fallback;
+    });
 
     fetchBracketData();
-  }, [isClient, tournamentId]);
+    // availableBrackets được derive từ tournament.formats → formatsKey là dependency
+    // ổn định đại diện cho cấu hình format.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient, tournamentId, formatsKey]);
 
   const participantCount = participantList.length;
-
-  // Kiểm tra các thể thức có trong giải đấu
-  const hasGroupStage = tournament.formats?.includes('group');
-  const hasSingleElimination = tournament.formats?.includes('single_elimination');
-  const hasDoubleElimination = tournament.formats?.includes('double_elimination');
-  const hasSwiss = tournament.formats?.includes('swiss');
-
-  const availableBrackets = [
-    { type: 'group' as const, label: 'Vòng bảng', icon: '📊', enabled: hasGroupStage },
-    { type: 'single_elimination' as const, label: 'Đấu loại trực tiếp', icon: '⚡', enabled: hasSingleElimination },
-    { type: 'double_elimination' as const, label: 'Nhánh thắng-thua', icon: '🔄', enabled: hasDoubleElimination },
-    { type: 'swiss' as const, label: 'Vòng Swiss', icon: '🃏', enabled: hasSwiss },
-  ].filter(b => b.enabled);
 
   // Chia danh sách team thành N bảng đều nhau và gọi API tạo matches
   const createBracketWithGroupCount = async (count: number) => {
@@ -324,14 +474,41 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
           />
         );
       
-      case 'single_elimination':
+      case 'single_elimination': {
+        const seBestOf = getBestOfForFormat('single_elimination', 1);
+        const formatsArr = tournament.formats || [];
+        const advSteps = tournament.advancementSteps || [];
+        const seIndex = formatsArr.indexOf('single_elimination');
+        const prevFormat = seIndex > 0 ? formatsArr[seIndex - 1] : null;
+
+        // Nếu vòng trước là 'group' và đã có matches → tính các đội đi tiếp
+        // từ kết quả vòng bảng để truyền sang single elim.
+        let qualifiedTeams: { id: string; name: string }[] | undefined;
+        if (prevFormat === 'group' && groupMatches.length > 0) {
+          const totalAdvancing = advSteps[seIndex - 1];
+          if (typeof totalAdvancing === 'number' && totalAdvancing > 0) {
+            qualifiedTeams = computeQualifiedFromGroups(
+              groupMatches,
+              participantList,
+              totalAdvancing,
+            );
+          }
+        }
+
         return (
-          <div className={styles.comingSoon}>
-            <div className={styles.comingSoonIcon}>⏳</div>
-            <h4>Đang phát triển</h4>
-            <p>Sơ đồ đấu loại trực tiếp sẽ sớm được cập nhật</p>
-          </div>
+          <SingleEliminationBracket
+            tournamentId={tournamentId}
+            participants={participantList}
+            qualifiedTeams={qualifiedTeams}
+            formats={formatsArr}
+            advancementSteps={advSteps}
+            thirdPlaceMatch={tournament.thirdPlaceMatch || false}
+            bestOf={seBestOf}
+            isReadOnly={!isCreator}
+            formatNames={formatNames}
+          />
         );
+      }
       
       case 'double_elimination':
         return (

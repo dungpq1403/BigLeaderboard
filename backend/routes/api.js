@@ -92,6 +92,10 @@ router.put('/tournaments/:id/group-matches/:matchId', tournamentController.updat
 router.post('/tournaments/:id/initialize-group-matches', tournamentController.createGroupMatches);
 router.post('/tournaments/:id/group-matches/schedule', authMiddleware, tournamentController.scheduleGroupMatches);
 router.post('/tournaments/:id/group-matches/ensure', authMiddleware, tournamentController.ensureGroupMatches);
+// Single elimination match scores (lưu DB thay cho localStorage)
+router.get('/tournaments/:id/single-elim-matches', tournamentController.getSingleEliminationMatches);
+router.put('/tournaments/:id/single-elim-matches/:matchId', authMiddleware, tournamentController.upsertSingleEliminationMatch);
+router.delete('/tournaments/:id/single-elim-matches/:matchId', authMiddleware, tournamentController.deleteSingleEliminationMatch);
 // GET /api/tournaments/:id/round-best-of
 router.get('/tournaments/:id/round-best-of', async (req, res) => {
   try {

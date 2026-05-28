@@ -131,9 +131,30 @@
     transition: all 0.2s;
   }
   
-  .addBtn:hover {
+  .addBtn:hover:not(:disabled) {
     transform: translateY(-1px);
     background: linear-gradient(135deg, #d97706 0%, #92400e 100%);
+  }
+
+  .addBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: rgba(120, 53, 15, 0.5);
+  }
+
+  /* Nhãn nhỏ hiển thị cạnh tên anchor format (Swiss/Vòng bảng) báo rằng vị trí
+     của nó được khoá ở đầu chuỗi thể thức. */
+  .lockedTag {
+    margin-left: 0.5rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #fde68a;
+    background: rgba(245, 158, 11, 0.18);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    padding: 0.1rem 0.4rem;
+    border-radius: 0.5rem;
+    vertical-align: middle;
+    letter-spacing: 0.02em;
   }
 
   .transitionPreview {

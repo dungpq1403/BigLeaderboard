@@ -54,6 +54,17 @@ interface Group {
   matches: MatchData[];
 }
 
+const DEFAULT_GROUP_COLUMNS: Column[] = [
+  { id: 'rank', name: 'Hạng', isDefault: true },
+  { id: 'name', name: 'Tên đội (người chơi)', isDefault: true },
+  { id: 'coefficient', name: 'Hệ số', isDefault: true },
+  { id: 'points', name: 'Điểm', isDefault: true },
+  { id: 'matches', name: 'Số trận', isDefault: true },
+  { id: 'wins', name: 'Thắng', isDefault: true },
+  { id: 'draws', name: 'Hòa', isDefault: true },
+  { id: 'losses', name: 'Thua', isDefault: true },
+];
+
 export default function GroupStageBracket({ 
   tournamentId,
   teams, 
@@ -66,7 +77,6 @@ export default function GroupStageBracket({
   onSplitGroups,
 }: GroupStageBracketProps) {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [columns, setColumns] = useState<Column[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -74,22 +84,14 @@ export default function GroupStageBracket({
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [editScores, setEditScores] = useState<{ teamA: number; teamB: number }>({ teamA: 0, teamB: 0 });
 
-  // Khởi tạo columns từ groupColumns hoặc dùng mặc định
-  useEffect(() => {
+  // Derive columns từ prop. Dùng useMemo (thay vì state + effect) để tránh vòng lặp
+  // setState vô hạn khi parent truyền `groupColumns` mới mỗi lần render (vd: `|| undefined`
+  // kết hợp default `= []` sẽ tạo reference mới mỗi render).
+  const columns = useMemo<Column[]>(() => {
     if (groupColumns && groupColumns.length > 0) {
-      setColumns(groupColumns);
-    } else {
-      setColumns([
-        { id: 'rank', name: 'Hạng', isDefault: true },
-        { id: 'name', name: 'Tên đội (người chơi)', isDefault: true },
-        { id: 'coefficient', name: 'Hệ số', isDefault: true },
-        { id: 'points', name: 'Điểm', isDefault: true },
-        { id: 'matches', name: 'Số trận', isDefault: true },
-        { id: 'wins', name: 'Thắng', isDefault: true },
-        { id: 'draws', name: 'Hòa', isDefault: true },
-        { id: 'losses', name: 'Thua', isDefault: true },
-      ]);
+      return groupColumns;
     }
+    return DEFAULT_GROUP_COLUMNS;
   }, [groupColumns]);
 
   // Fetch matches từ API

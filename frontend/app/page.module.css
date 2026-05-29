@@ -94,32 +94,32 @@
   transform: translateY(-50%) scale(1);
 }
 
-/* Scrollable container */
+/* Scrollable container - scrollbar ẩn hoàn toàn, loop carousel quản lý vị trí qua JS */
 .gamesScrollContainer {
   overflow-x: auto;
-  scroll-behavior: smooth;
-  scrollbar-width: thin;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  justify-content: center;
   display: flex;
+  justify-content: center;
+  width: 100%;
+  /* Ẩn scrollbar Firefox */
+  scrollbar-width: none;
+  /* Ẩn scrollbar IE/Edge legacy */
+  -ms-overflow-style: none;
+  /* Khoảng đệm dọc để hover scale không bị cắt */
+  padding: 0.25rem 0;
 }
 
+/* Ẩn scrollbar Chrome/Safari/Edge mới */
 .gamesScrollContainer::-webkit-scrollbar {
-  height: 6px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-.gamesScrollContainer::-webkit-scrollbar-track {
-  background: rgba(120, 53, 15, 0.3);
-  border-radius: 3px;
-}
-
-.gamesScrollContainer::-webkit-scrollbar-thumb {
-  background: #b45309;
-  border-radius: 3px;
-}
-
-.gamesScrollContainer::-webkit-scrollbar-thumb:hover {
-  background: #d97706;
+/* Khi danh sách game đủ dài để loop, bỏ căn giữa để nội dung neo từ trái */
+.gamesScrollContainer.looping {
+  justify-content: flex-start;
 }
 
 /* Games Grid - Hàng ngang */
@@ -130,10 +130,6 @@
   padding: 0.5rem 0.25rem;
   width: max-content;
   flex-wrap: nowrap; /* Đảm bảo không xuống dòng */
-}
-
-.gamesScrollContainer.hasScroll .gamesGrid {
-  justify-content: flex-start;
 }
 
 .gameCard {

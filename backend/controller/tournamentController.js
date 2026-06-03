@@ -4,14 +4,16 @@ const TournamentContact = require('../models/TournamentContact');
 const GroupMatch = require('../models/GroupMatch');
 const TournamentRoundBestOf = require('../models/TournamentRoundBestOf');
 const SingleEliminationMatch = require('../models/SingleEliminationMatch');
+const DoubleEliminationMatch = require('../models/DoubleEliminationMatch');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
 const path = require('path');
 const fs = require('fs');
 
 // Tính winner từ tỉ số + bestOf theo cùng quy tắc với FE (ceil(BO/2) wins + lead).
-// Trả về tên đội thắng hoặc null nếu chưa đủ điều kiện.
-function deriveSingleElimWinner(teamAScore, teamBScore, bestOf, teamAName, teamBName) {
+// Trả về tên đội thắng hoặc null nếu chưa đủ điều kiện. Dùng chung cho cả
+// single elimination và double elimination vì luật BO giống nhau.
+function deriveBracketWinner(teamAScore, teamBScore, bestOf, teamAName, teamBName) {
   const a = Number(teamAScore) || 0;
   const b = Number(teamBScore) || 0;
   const bo = Number(bestOf) || 3;
@@ -305,6 +307,7 @@ const tournamentController = {
       await TournamentContact.destroy({ where: { tournamentId: id } });
       await GroupMatch.destroy({ where: { tournamentId: id } });
       await SingleEliminationMatch.destroy({ where: { tournamentId: id } });
+      await DoubleEliminationMatch.destroy({ where: { tournamentId: id } });
       await TournamentRoundBestOf.destroy({ where: { tournamentId: id } });
       await tournament.destroy();
       
@@ -517,6 +520,13 @@ const tournamentController = {
       //    Bracket được dựng động từ participants, nên chỉ có scores là persisted.
       if (oldFormats.includes('single_elimination') && !newFormatsArr.includes('single_elimination')) {
         await SingleEliminationMatch.destroy({ where: { tournamentId: tournament.id } });
+      }
+
+      // 3) Bỏ "Nhánh thắng-thua" → xoá toàn bộ tỉ số đã lưu cho các trận double
+      //    elim. Cấu trúc bracket được dựng động từ participants ở FE, nên chỉ
+      //    có scores là persisted trong DB.
+      if (oldFormats.includes('double_elimination') && !newFormatsArr.includes('double_elimination')) {
+        await DoubleEliminationMatch.destroy({ where: { tournamentId: tournament.id } });
       }
 
       if (roundBestOfs && Array.isArray(roundBestOfs) && roundBestOfs.length > 0) {
@@ -810,7 +820,7 @@ const tournamentController = {
           .json({ message: 'Cả 2 đội không thể cùng đạt mức thắng.' });
       }
 
-      const winnerName = deriveSingleElimWinner(
+      const winnerName = deriveBracketWinner(
         safeA,
         safeB,
         safeBO,
@@ -913,6 +923,186 @@ const tournamentController = {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to delete single elimination match.',
+        error: error.message,
+      });
+    }
+  },
+
+  // GET /api/tournaments/:id/double-elim-matches
+  // Trả về toàn bộ tỉ số / cấu hình BO đã lưu cho sơ đồ double elimination.
+  // Endpoint công khai (không cần đăng nhập) để khán giả cũng xem được bracket,
+  // đồng bộ hành vi với single-elim-matches.
+  async getDoubleEliminationMatches(req, res) {
+    try {
+      const { id } = req.params;
+
+      const matches = await DoubleEliminationMatch.findAll({
+        where: { tournamentId: id },
+        order: [['matchId', 'ASC']],
+      });
+
+      res.json({ matches });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to fetch double elimination matches.',
+        error: error.message,
+      });
+    }
+  },
+
+  // PUT /api/tournaments/:id/double-elim-matches/:matchId
+  // Body: { teamAScore, teamBScore, bestOf, teamAName?, teamBName?, bracket?, invalidateMatchIds?: number[] }
+  // Upsert tỉ số cho 1 trận DE. Nếu winner đổi, FE truyền invalidateMatchIds để
+  // backend xoá toàn bộ downstream (cả WB, LB, GF) trong cùng 1 request — tránh
+  // race condition giữa save và cascade-delete.
+  async upsertDoubleEliminationMatch(req, res) {
+    try {
+      const { id, matchId } = req.params;
+      const {
+        teamAScore,
+        teamBScore,
+        bestOf,
+        teamAName,
+        teamBName,
+        bracket,
+        invalidateMatchIds,
+      } = req.body;
+
+      const tournament = await Tournament.findByPk(id);
+      if (!tournament) {
+        return res.status(404).json({ message: 'Tournament not found.' });
+      }
+      if (tournament.createdBy !== req.user.id) {
+        return res
+          .status(403)
+          .json({ message: 'You are not the creator of this tournament.' });
+      }
+
+      const safeA = Math.max(0, parseInt(teamAScore, 10) || 0);
+      const safeB = Math.max(0, parseInt(teamBScore, 10) || 0);
+      const safeBO = Math.max(1, parseInt(bestOf, 10) || 3);
+
+      const need = Math.ceil(safeBO / 2);
+      if (safeA > need || safeB > need) {
+        return res.status(400).json({
+          message: `Điểm không được vượt quá ${need} (BO${safeBO}).`,
+        });
+      }
+      if (safeA === need && safeB === need) {
+        return res
+          .status(400)
+          .json({ message: 'Cả 2 đội không thể cùng đạt mức thắng.' });
+      }
+
+      const numericMatchId = parseInt(matchId, 10);
+      if (!Number.isFinite(numericMatchId) || numericMatchId < 1) {
+        return res.status(400).json({ message: 'matchId không hợp lệ.' });
+      }
+
+      // Chỉ chấp nhận 3 giá trị bracket hợp lệ; còn lại → null (không chặn lưu
+      // để tương thích với các phiên bản FE chưa gửi field này).
+      const safeBracket =
+        bracket === 'WB' || bracket === 'LB' || bracket === 'GF' ? bracket : null;
+
+      const winnerName = deriveBracketWinner(
+        safeA,
+        safeB,
+        safeBO,
+        teamAName,
+        teamBName
+      );
+      const isCompleted = winnerName !== null;
+
+      const [row] = await DoubleEliminationMatch.findOrCreate({
+        where: { tournamentId: id, matchId: numericMatchId },
+        defaults: {
+          tournamentId: id,
+          matchId: numericMatchId,
+          bracket: safeBracket,
+          teamAName: teamAName || null,
+          teamBName: teamBName || null,
+          teamAScore: safeA,
+          teamBScore: safeB,
+          bestOf: safeBO,
+          winnerName,
+          isCompleted,
+          completedAt: isCompleted ? new Date() : null,
+        },
+      });
+
+      row.bracket = safeBracket || row.bracket;
+      row.teamAName = teamAName || null;
+      row.teamBName = teamBName || null;
+      row.teamAScore = safeA;
+      row.teamBScore = safeB;
+      row.bestOf = safeBO;
+      row.winnerName = winnerName;
+      row.isCompleted = isCompleted;
+      row.completedAt = isCompleted ? row.completedAt || new Date() : null;
+      await row.save();
+
+      // Cascade xoá downstream nếu FE chỉ định. Với DE, downstream có thể bao
+      // gồm cả LB (vì WB loser sang LB) lẫn GF — FE đã tính sẵn danh sách qua
+      // BFS theo feed type winner/loser.
+      if (Array.isArray(invalidateMatchIds) && invalidateMatchIds.length > 0) {
+        const ids = invalidateMatchIds
+          .map((n) => parseInt(n, 10))
+          .filter((n) => Number.isFinite(n) && n !== numericMatchId);
+        if (ids.length > 0) {
+          await DoubleEliminationMatch.destroy({
+            where: { tournamentId: id, matchId: ids },
+          });
+        }
+      }
+
+      res.json({ message: 'Match saved.', match: row });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to save double elimination match.',
+        error: error.message,
+      });
+    }
+  },
+
+  // DELETE /api/tournaments/:id/double-elim-matches/:matchId
+  // Body: { invalidateMatchIds?: number[] }
+  // Xoá kết quả 1 trận DE + toàn bộ downstream do FE chỉ định.
+  async deleteDoubleEliminationMatch(req, res) {
+    try {
+      const { id, matchId } = req.params;
+      const { invalidateMatchIds } = req.body || {};
+
+      const tournament = await Tournament.findByPk(id);
+      if (!tournament) {
+        return res.status(404).json({ message: 'Tournament not found.' });
+      }
+      if (tournament.createdBy !== req.user.id) {
+        return res
+          .status(403)
+          .json({ message: 'You are not the creator of this tournament.' });
+      }
+
+      const numericMatchId = parseInt(matchId, 10);
+      if (!Number.isFinite(numericMatchId) || numericMatchId < 1) {
+        return res.status(400).json({ message: 'matchId không hợp lệ.' });
+      }
+
+      const idsToDelete = new Set([numericMatchId]);
+      if (Array.isArray(invalidateMatchIds)) {
+        invalidateMatchIds.forEach((n) => {
+          const v = parseInt(n, 10);
+          if (Number.isFinite(v)) idsToDelete.add(v);
+        });
+      }
+
+      const deletedCount = await DoubleEliminationMatch.destroy({
+        where: { tournamentId: id, matchId: Array.from(idsToDelete) },
+      });
+
+      res.json({ message: 'Match deleted.', deletedCount });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to delete double elimination match.',
         error: error.message,
       });
     }

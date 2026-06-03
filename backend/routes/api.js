@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const adminMiddleware = require('../middleware/admin');
+const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
+const { JWT_SECRET } = require('../config/jwt');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -53,8 +55,8 @@ router.get('/test', (req, res) => {
   res.json({ message: 'API is working!' });
 });
 
-router.post('/register', authController.register);
-router.post('/login', authController.login);
+router.post('/register', registerLimiter, authController.register);
+router.post('/login', loginLimiter, authController.login);
 router.get('/verify-token', authController.verifyToken);
 
 // ============ USER ROUTES ============
@@ -96,6 +98,11 @@ router.post('/tournaments/:id/group-matches/ensure', authMiddleware, tournamentC
 router.get('/tournaments/:id/single-elim-matches', tournamentController.getSingleEliminationMatches);
 router.put('/tournaments/:id/single-elim-matches/:matchId', authMiddleware, tournamentController.upsertSingleEliminationMatch);
 router.delete('/tournaments/:id/single-elim-matches/:matchId', authMiddleware, tournamentController.deleteSingleEliminationMatch);
+// Double elimination match scores (lưu DB thay cho localStorage). API mirror
+// với single-elim-matches; FE truyền thêm "bracket" (WB|LB|GF) để DB lưu kèm.
+router.get('/tournaments/:id/double-elim-matches', tournamentController.getDoubleEliminationMatches);
+router.put('/tournaments/:id/double-elim-matches/:matchId', authMiddleware, tournamentController.upsertDoubleEliminationMatch);
+router.delete('/tournaments/:id/double-elim-matches/:matchId', authMiddleware, tournamentController.deleteDoubleEliminationMatch);
 // GET /api/tournaments/:id/round-best-of
 router.get('/tournaments/:id/round-best-of', async (req, res) => {
   try {
@@ -189,7 +196,6 @@ router.get('/tournaments/:id/check-registration', async (req, res, next) => {
   if (token) {
     try {
       const jwt = require('jsonwebtoken');
-      const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
       const decoded = jwt.verify(token, JWT_SECRET);
       const User = require('../models/User');
       const user = await User.findByPk(decoded.id, {

@@ -1,8 +1,30 @@
 const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { JWT_SECRET } = require('../config/jwt');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
+const BCRYPT_ROUNDS = 12;
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Detects legacy SHA-256 hashes (64-char hex) from before the bcrypt migration.
+// Bcrypt hashes always start with $2a$, $2b$, or $2y$.
+const LEGACY_SHA256_RE = /^[a-f0-9]{64}$/i;
+
+function legacyVerify(plain, stored) {
+  const hashed = crypto.createHash('sha256').update(plain).digest('hex');
+  // timingSafeEqual avoids leaking info via response-time differences
+  return (
+    hashed.length === stored.length &&
+    crypto.timingSafeEqual(Buffer.from(hashed), Buffer.from(stored))
+  );
+}
+
+// Wraps error responses so we never leak DB / stack info to the client in prod.
+function errorBody(publicMessage, error) {
+  if (IS_PROD) return { message: publicMessage };
+  return { message: publicMessage, error: error?.message };
+}
 
 const authController = {
   // POST /api/register
@@ -21,6 +43,10 @@ const authController = {
         return res.status(400).json({ message: 'Invalid email format.' });
       }
 
+      if (password.length < 8) {
+        return res.status(400).json({ message: 'Password must be at least 8 characters.' });
+      }
+
       const existingUser = await User.findOne({ where: { username } });
       if (existingUser) {
         return res.status(409).json({ message: 'Username already exists.' });
@@ -31,10 +57,7 @@ const authController = {
         return res.status(409).json({ message: 'Email already exists.' });
       }
 
-      const hashedPassword = crypto
-        .createHash('sha256')
-        .update(password)
-        .digest('hex');
+      const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
       const newUser = await User.create({
         username,
@@ -59,12 +82,19 @@ const authController = {
         },
       });
     } catch (error) {
-      return res.status(500).json({ message: 'Register failed.', error: error.message });
+      console.error('[register] error:', error);
+      return res.status(500).json(errorBody('Register failed.', error));
     }
   },
 
   // POST /api/login
   async login(req, res) {
+    // Generic credential-failure response. Reused for "user not found" and
+    // "wrong password" so an attacker can't enumerate which usernames/emails
+    // are registered.
+    const invalidCredentials = () =>
+      res.status(401).json({ message: 'Invalid credentials.' });
+
     try {
       const { username, email, password } = req.body;
 
@@ -80,18 +110,36 @@ const authController = {
       }
 
       if (!user) {
-        return res.status(404).json({
-          message: 'Login information does not exist, please register an account.',
-        });
+        // Spend roughly the same time as a real bcrypt compare to reduce the
+        // timing side-channel between "no such user" and "wrong password".
+        await bcrypt.compare(password, '$2b$12$CwTycUXWue0Thq9StjUM0uJ8.QmZQz4zV1jzKQy8nQ8mYbqgC1L9q');
+        return invalidCredentials();
       }
 
-      const hashedPassword = crypto
-        .createHash('sha256')
-        .update(password)
-        .digest('hex');
+      let isValid = false;
+      let needsRehash = false;
 
-      if (hashedPassword !== user.password) {
-        return res.status(401).json({ message: 'Invalid username/email or password.' });
+      if (user.password.startsWith('$2')) {
+        isValid = await bcrypt.compare(password, user.password);
+      } else if (LEGACY_SHA256_RE.test(user.password)) {
+        // Migration path: accept old SHA-256 hashes one more time,
+        // then upgrade the user to bcrypt transparently on success.
+        isValid = legacyVerify(password, user.password);
+        needsRehash = isValid;
+      }
+
+      if (!isValid) {
+        return invalidCredentials();
+      }
+
+      if (needsRehash) {
+        try {
+          user.password = await bcrypt.hash(password, BCRYPT_ROUNDS);
+          await user.save();
+        } catch (e) {
+          // Don't block login if rehash fails; just log so we can investigate.
+          console.error('[login] failed to rehash legacy password:', e);
+        }
       }
 
       const token = jwt.sign(
@@ -117,7 +165,8 @@ const authController = {
         },
       });
     } catch (error) {
-      return res.status(500).json({ message: 'Login failed.', error: error.message });
+      console.error('[login] error:', error);
+      return res.status(500).json(errorBody('Login failed.', error));
     }
   },
 

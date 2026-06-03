@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import styles from './BracketManager.module.css';
 import GroupStageBracket from './GroupStageBracket';
 import SingleEliminationBracket from './SingleEliminationBracket';
+import DoubleEliminationBracket from './DoubleEliminationBracket';
 import SplitGroupsModal from './SplitGroupsModal';
 import { toast } from 'react-toastify';
 import { useFormat } from '@/context/FormatContext';
@@ -541,14 +542,41 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
         );
       }
       
-      case 'double_elimination':
+      case 'double_elimination': {
+        const deBestOf = getBestOfForFormat('double_elimination', 1);
+        const formatsArr = tournament.formats || [];
+        const advSteps = tournament.advancementSteps || [];
+        const deIndex = formatsArr.indexOf('double_elimination');
+        const prevFormat = deIndex > 0 ? formatsArr[deIndex - 1] : null;
+
+        // Nếu vòng trước là 'group' và đã có matches → tính các đội đi tiếp
+        // từ kết quả vòng bảng để truyền sang double elim (giống single elim).
+        let deQualifiedTeams: { id: string; name: string }[] | undefined;
+        if (prevFormat === 'group' && groupMatches.length > 0) {
+          const totalAdvancing = advSteps[deIndex - 1];
+          if (typeof totalAdvancing === 'number' && totalAdvancing > 0) {
+            deQualifiedTeams = computeQualifiedFromGroups(
+              groupMatches,
+              participantList,
+              totalAdvancing,
+            );
+          }
+        }
+
         return (
-          <div className={styles.comingSoon}>
-            <div className={styles.comingSoonIcon}>⏳</div>
-            <h4>Đang phát triển</h4>
-            <p>Sơ đồ nhánh thắng-thua sẽ sớm được cập nhật</p>
-          </div>
+          <DoubleEliminationBracket
+            tournamentId={tournamentId}
+            participants={participantList}
+            qualifiedTeams={deQualifiedTeams}
+            formats={formatsArr}
+            advancementSteps={advSteps}
+            bestOf={deBestOf}
+            isReadOnly={!isCreator}
+            formatNames={formatNames}
+            startDate={tournament.startDate}
+          />
         );
+      }
       
       case 'swiss':
         return (

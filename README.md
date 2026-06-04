@@ -1,6 +1,6 @@
 # BigTournament
 
-> A place where you can host your tournaments with many shortcuts to deliver a wonderful experience to users
+> A place where you can host your tournaments with many shortcuts to deliver a wonderful experience to users. This web was developed using React Next.js for frontend and Node.js/Express for backend
 
 This project includes:
 

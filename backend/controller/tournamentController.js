@@ -7,6 +7,7 @@ const SingleEliminationMatch = require('../models/SingleEliminationMatch');
 const DoubleEliminationMatch = require('../models/DoubleEliminationMatch');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
+const Game = require('../models/Game');
 const path = require('path');
 const fs = require('fs');
 
@@ -142,6 +143,8 @@ const tournamentController = {
   },
 
   // GET /api/tournaments/search
+  // Hỗ trợ ?limit=<n> để FE phân biệt giữa autocomplete (top bar, ~10 kết quả)
+  // và trang /search hiển thị toàn bộ kết quả (cần limit lớn hơn).
   async searchTournaments(req, res) {
     try {
       const { q } = req.query;
@@ -149,6 +152,12 @@ const tournamentController = {
       if (!q || q.trim() === '') {
         return res.json([]);
       }
+
+      const parsedLimit = parseInt(req.query.limit, 10);
+      // Clamp 1..100 để tránh client request quá lớn gây tốn DB
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.min(Math.max(parsedLimit, 1), 100)
+        : 10;
       
       const tournaments = await Tournament.findAll({
         where: {
@@ -157,23 +166,42 @@ const tournamentController = {
           ],
         },
         order: [['createdAt', 'DESC']],
-        limit: 10,
+        limit,
       });
       
+      // Bulk-fetch creators & games rồi map theo id để tránh N+1 query.
       const userIds = [...new Set(tournaments.map(t => t.createdBy))];
-      const users = await User.findAll({
-        where: { id: userIds },
-        attributes: ['id', 'username', 'fullName'],
-      });
-      
+      const gameIds = [...new Set(tournaments.map(t => t.gameId).filter(Boolean))];
+
+      const [users, games] = await Promise.all([
+        userIds.length
+          ? User.findAll({
+              where: { id: userIds },
+              attributes: ['id', 'username', 'fullName'],
+            })
+          : Promise.resolve([]),
+        gameIds.length
+          ? Game.findAll({
+              where: { id: gameIds },
+              attributes: ['id', 'name', 'slug', 'icon', 'imageUrl'],
+            })
+          : Promise.resolve([]),
+      ]);
+
       const userMap = {};
       users.forEach(user => {
         userMap[user.id] = user;
       });
-      
+
+      const gameMap = {};
+      games.forEach(game => {
+        gameMap[game.id] = game;
+      });
+
       const results = tournaments.map(tournament => ({
         ...tournament.toJSON(),
         creator: userMap[tournament.createdBy] || null,
+        game: gameMap[tournament.gameId] || null,
       }));
       
       res.json(results);

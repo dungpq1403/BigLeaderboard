@@ -42,6 +42,18 @@
   font-size: 14px;
 }
 
+/* Highlight input có lỗi để user thấy ngay field nào đang sai. */
+.input[aria-invalid="true"] {
+  border-color: #dc2626;
+  background-color: #fef2f2;
+}
+
+.input[aria-invalid="true"]:focus {
+  outline: none;
+  border-color: #b91c1c;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
+
 .textarea {
   min-height: 90px;
   resize: vertical;
@@ -110,4 +122,121 @@
 .select:focus {
   outline: none;
   border-color: #b45309;
+}
+
+/* Custom country dropdown */
+.countryDropdown {
+  position: relative;
+  width: 100%;
+}
+
+.countryToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background-color: white;
+  color: #1f2937;
+  text-align: left;
+  cursor: pointer;
+}
+
+.countryToggle:focus {
+  outline: none;
+  border-color: #b45309;
+}
+
+.countryPlaceholder {
+  color: #9ca3af;
+}
+
+.countryArrow {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.countryOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.countryFlag {
+  width: 22px;
+  height: 16px;
+  object-fit: cover;
+  border-radius: 2px;
+  border: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+/* Panel chứa search input + list. Search input dính cố định ở trên,
+   chỉ phần list bên dưới scroll. */
+.countryPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  z-index: 20;
+  overflow: hidden;
+}
+
+.countrySearch {
+  border-radius: 8px;
+  width: 100%;
+  border: none;
+  border: 1px solid black;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  background: #fafafa;
+  color: #1f2937;
+}
+
+.countrySearch:focus {
+  background: #ffffff;
+  border-bottom-color: black;
+}
+
+.countryList {
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+.countryItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.countryItem:hover {
+  background-color: #fef3c7;
+}
+
+.countryItemActive {
+  background-color: #fde68a;
+  font-weight: 600;
+}
+
+.countryEmpty {
+  padding: 16px 12px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
 }

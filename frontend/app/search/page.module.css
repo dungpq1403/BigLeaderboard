@@ -1,0 +1,306 @@
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+  color: #fef3c7;
+  padding-top: 2rem;
+}
+
+.header {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.55) 0%, rgba(69, 26, 3, 0.55) 100%);
+  backdrop-filter: blur(6px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.25);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fef3c7;
+  word-break: break-word;
+}
+
+.queryHighlight {
+  color: #fcd34d;
+  font-style: italic;
+}
+
+.subtitle {
+  margin: 0.5rem 0 0;
+  color: #fde68a;
+  font-size: 0.9rem;
+}
+
+.subtitle strong {
+  color: #fcd34d;
+}
+
+.empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.3) 0%, rgba(69, 26, 3, 0.3) 100%);
+  backdrop-filter: blur(4px);
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  font-size: 1rem;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: #fde68a;
+  font-size: 1rem;
+}
+
+.spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid rgba(252, 211, 77, 0.3);
+  border-top-color: #fcd34d;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.errorBox {
+  text-align: center;
+  padding: 1.5rem;
+  background: rgba(127, 29, 29, 0.4);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  border-radius: 0.75rem;
+  color: #fecaca;
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #fef3c7;
+  border-left: 4px solid #fcd34d;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.18), transparent);
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+/* Mỗi status có viền trái màu khác nhau để dễ phân biệt */
+.section_upcoming .sectionTitle {
+  border-left-color: #60a5fa;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.2), transparent);
+}
+
+.section_ongoing .sectionTitle {
+  border-left-color: #34d399;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.2), transparent);
+}
+
+.section_ended .sectionTitle {
+  border-left-color: #9ca3af;
+  background: linear-gradient(90deg, rgba(107, 114, 128, 0.25), transparent);
+  opacity: 0.85;
+}
+
+.sectionIcon {
+  font-size: 1.25rem;
+}
+
+.sectionCount {
+  margin-left: auto;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fde68a;
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.4) 0%, rgba(69, 26, 3, 0.4) 100%);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2), inset 0 0 4px rgba(245, 158, 11, 0.15);
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(252, 211, 77, 0.8);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), 0 0 12px rgba(245, 158, 11, 0.4);
+}
+
+.card:focus-visible {
+  outline: 2px solid #fcd34d;
+  outline-offset: 2px;
+  border-color: rgba(252, 211, 77, 0.9);
+}
+
+.cardImage {
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.cardImagePlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.5), rgba(69, 26, 3, 0.5));
+}
+
+.cardInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cardName {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #fef3c7;
+  word-break: break-word;
+}
+
+.cardCreator {
+  display: flex;
+  align-items: center;
+}
+
+/* Hàng meta: chứa game badge + creator badge cùng dòng để user nhận
+   biết nhanh giải này thuộc game nào và do ai tạo. */
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gameBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.2rem 0.55rem;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.25) 0%, rgba(16, 185, 129, 0.25) 100%);
+  border: 1px solid rgba(52, 211, 153, 0.55);
+  border-radius: 0.375rem;
+  color: #d1fae5;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  max-width: 100%;
+}
+
+.gameBadge:hover {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.4) 0%, rgba(16, 185, 129, 0.4) 100%);
+  border-color: rgba(110, 231, 183, 0.85);
+  transform: translateY(-1px);
+}
+
+.gameBadgeIcon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.gameBadgeName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14ch;
+}
+
+.cardFormats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.formatBadge {
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.7) 0%, rgba(120, 53, 15, 0.7) 100%);
+  color: #fef3c7;
+  font-size: 0.7rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.cardStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-top: 0.25rem;
+}
+
+.statItem {
+  font-size: 0.75rem;
+  color: #fde68a;
+}
+
+.prize {
+  color: #fcd34d;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 1rem 0.875rem 2rem;
+  }
+
+  .card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cardImage {
+    width: 100%;
+    height: 140px;
+  }
+}

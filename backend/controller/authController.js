@@ -93,7 +93,7 @@ const authController = {
     // "wrong password" so an attacker can't enumerate which usernames/emails
     // are registered.
     const invalidCredentials = () =>
-      res.status(401).json({ message: 'Invalid credentials.' });
+      res.status(401).json({ message: 'Tài khoản hoặc mật khẩu không đúng.' });
 
     try {
       const { username, email, password } = req.body;

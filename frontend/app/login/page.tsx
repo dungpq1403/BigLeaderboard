@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
@@ -42,6 +42,12 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(rememberedAuth.rememberMe);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setUsername('');
+    setEmail('');
+    setPassword('');
+  }, [loginType]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};

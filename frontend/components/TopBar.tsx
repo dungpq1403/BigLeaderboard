@@ -2,11 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useState, useRef, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import styles from "./TopBar.module.css";
 import TournamentCreator from "./tournament/TournamentCreator";
 import { useFormat } from "@/context/FormatContext";
 import Image from 'next/image';
+
+// Khoảng debounce (ms) trước khi gọi API gợi ý.
+// Đủ ngắn để cảm giác "live", đủ dài để không spam request khi user gõ nhanh.
+const SEARCH_DEBOUNCE_MS = 300;
 
 type AuthUser = {
   id: number;
@@ -30,12 +34,21 @@ type TournamentSearchResult = {
     username: string;
     fullName: string;
   };
+  game: {
+    id: number;
+    name: string;
+    slug: string;
+    icon: string | null;
+    imageUrl: string | null;
+  } | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 export default function TopBar() {
   const router = useRouter();
+  const pathname = usePathname();
+  const urlSearchParams = useSearchParams();
   const { getFormatName, getFormatIcon } = useFormat();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
@@ -46,6 +59,21 @@ export default function TopBar() {
   const [searching, setSearching] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+  // Phân biệt giữa "user gõ tay" và "input bị set từ URL sync".
+  // Khi sync từ URL, ta KHÔNG muốn auto-mở dropdown vì trang /search
+  // đã hiển thị toàn bộ kết quả rồi.
+  const userTypedRef = useRef(false);
+
+  // Khi đang ở trang /search, sync input với ?q=... trên URL
+  // để user thấy được context của trang kết quả họ đang xem.
+  useEffect(() => {
+    if (pathname === "/search") {
+      const q = urlSearchParams.get("q") ?? "";
+      userTypedRef.current = false;
+      setSearchQuery(q);
+    }
+    setSearchQuery('');
+  }, [pathname, urlSearchParams]);
 
   useEffect(() => {
     const verifyToken = async () => {
@@ -121,37 +149,59 @@ export default function TopBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Tìm kiếm giải đấu từ API
+  // Tìm kiếm giải đấu từ API.
+  // - Debounce SEARCH_DEBOUNCE_MS để tránh gọi API mỗi keystroke.
+  // - AbortController để hủy request cũ khi user gõ tiếp, tránh race-condition
+  //   khiến kết quả của query cũ override kết quả của query mới.
+  // - Chỉ chạy khi user thực sự gõ (không chạy khi input bị sync từ URL).
   useEffect(() => {
+    if (!userTypedRef.current) return;
 
-    if (searchQuery.trim() === "") {
+    const trimmed = searchQuery.trim();
+    if (trimmed === "") {
       setSearchResults([]);
       setShowSearchResults(false);
+      setSearching(false);
       return;
     }
 
-   const searchImmediately = async () => {
+    const controller = new AbortController();
+
+    const timer = setTimeout(async () => {
       setSearching(true);
       try {
-        const response = await fetch(`${API_BASE}/tournaments/search?q=${encodeURIComponent(searchQuery)}`);
+        const response = await fetch(
+          `${API_BASE}/tournaments/search?q=${encodeURIComponent(trimmed)}`,
+          { signal: controller.signal }
+        );
         const data = await response.json();
         setSearchResults(Array.isArray(data) ? data : []);
         setShowSearchResults(true);
       } catch (error) {
-        console.error('Search failed:', error);
-        setSearchResults([]);
+        // Bỏ qua AbortError vì đó là tự ta hủy request, không phải lỗi thật
+        if ((error as Error)?.name !== "AbortError") {
+          console.error("Search failed:", error);
+          setSearchResults([]);
+        }
       } finally {
         setSearching(false);
       }
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
     };
-    searchImmediately()
   }, [searchQuery]);
 
+  // Enter trên thanh search → điều hướng tới trang kết quả /search?q=...
+  // thay vì auto-nhảy vào kết quả đầu (gây hành vi khó đoán cho user).
   const handleSearchSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (searchResults.length > 0) {
-      handleSelectTournament(searchResults[0].id);
-    }
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return;
+    setShowSearchResults(false);
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
 
   const handleSelectTournament = (tournamentId: number) => {
@@ -192,7 +242,10 @@ export default function TopBar() {
             type="text"
             placeholder="Tìm kiếm giải đấu..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              userTypedRef.current = true;
+              setSearchQuery(e.target.value);
+            }}
             className={styles.searchInput}
           />
           <button type="submit" className={styles.searchButton}>
@@ -233,6 +286,15 @@ export default function TopBar() {
                 <div className={styles.searchResultInfo}>
                   <div className={styles.searchResultHeader}>
                     <span className={styles.searchResultName}>{tournament.name}</span>
+                    {tournament.game && (
+                      <span
+                        className={styles.searchResultGameBadge}
+                        title={tournament.game.name}
+                      >
+                        <span aria-hidden>{tournament.game.icon || "🎮"}</span>
+                        <span>{tournament.game.name}</span>
+                      </span>
+                    )}
                     <TournamentCreator 
                       userId={tournament.creator?.id || 0}
                       username={tournament.creator?.username || 'Unknown'}

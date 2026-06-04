@@ -7,7 +7,8 @@ This project includes:
 Backend: 
 - **RESTful API**: to support CRUD operations in databases
 - **CORS (Cross-Origin Resource Sharing)**: to support API calls from two different ports (http://localhost:3000 (Frontend) call API to http://localhost:5000 (Backend)),
-- store login token in cookies (not yet but will be fixed), verifies token before any important action throughout the process of using the web.
+- Store login token in cookies (not yet but will be fixed), verifies token before any important action throughout the process of using the web.
+- Using MySQL Workbench databases to manage data throughout the project
 
 Frontend: 
 - Auto-generate brackets with just a click of a button.

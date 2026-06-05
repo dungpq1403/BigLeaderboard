@@ -2,10 +2,10 @@
 
 import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './page.module.css';
 import AddGameButton from '@/components/button/AddGameButton';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch } from '@/lib/api';
 
 // Số bản sao của danh sách game khi bật chế độ loop
 // Dùng 3 bản để có buffer ở cả hai phía (trái và phải) của copy ở giữa
@@ -27,32 +27,23 @@ interface Game {
 }
 
 export default function Home() {
-  const [games, setGames] = useState<Game[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [shouldLoop, setShouldLoop] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
   const isProgrammaticScrollRef = useRef(false);
 
-  const fetchGames = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/games`);
-      const data = await response.json();
-      setGames(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Failed to fetch games:', error);
-      setGames([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Danh sách game home page. queryKey ['games'] (không phải ['games', id])
+  // dành riêng cho list để không xung đột với cache theo gameId của detail.
+  const { data: games = [], isLoading: loading } = useQuery<Game[]>({
+    queryKey: ['games', 'list'],
+    queryFn: ({ signal }) => apiFetch<Game[]>(`/games`, { signal, auth: false }),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
 
-  useEffect(() => {
-    fetchGames();
-  }, []);
-
+  // Callback từ AddGameButton sau khi thêm game thành công → refetch list.
   const handleGameAdded = () => {
-    fetchGames();
+    queryClient.invalidateQueries({ queryKey: ['games', 'list'] });
   };
 
   // Bề rộng của một bản gốc (chia tổng scrollWidth cho số bản đang render)

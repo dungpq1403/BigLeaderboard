@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import RegistrationForm from '@/components/registration/RegistrationForm';
 import { toast } from 'react-toastify';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch } from '@/lib/api';
 
 interface Tournament {
   id: number;
@@ -33,52 +33,49 @@ interface RegisterPageProps {
 
 export default function RegisterPage({ params }: RegisterPageProps) {
   const router = useRouter();
-  const [tournament, setTournament] = useState<Tournament | null>(null);
+  const { id: idParam } = use(params);
+  const tournamentId = Number(idParam);
   const [userId, setUserId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
 
+  // Auth gate: chuyển hướng login nếu chưa đăng nhập.
   useEffect(() => {
-    const fetchData = async () => {
-      const { id } = await params;
-      
-      try {
-        // Get user info from localStorage
-        const session = localStorage.getItem('authSession');
-        if (!session) {
-          toast.error('Vui lòng đăng nhập để đăng ký');
-          router.push('/login');
-          return;
-        }
-        
-        const { user, token } = JSON.parse(session);
-        setUserId(user.id);
-        
-        // Fetch tournament details
-        const response = await fetch(`${API_BASE}/tournaments/${id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        
-        if (!response.ok) {
-          toast.error('Không tìm thấy giải đấu');
-          router.push('/');
-          return;
-        }
-        
-        const data = await response.json();
-        setTournament(data);
-      } catch (error) {
-        console.error('Failed to fetch tournament:', error);
-        toast.error('Có lỗi xảy ra');
-        router.push('/');
-      } finally {
-        setLoading(false);
+    try {
+      const raw = localStorage.getItem('authSession');
+      if (!raw) {
+        toast.error('Vui lòng đăng nhập để đăng ký');
+        router.push('/login');
+        return;
       }
-    };
-    
-    fetchData();
-  }, [params, router]);
+      const parsed = JSON.parse(raw);
+      setUserId(parsed?.user?.id ?? null);
+    } catch {
+      router.push('/login');
+      return;
+    }
+    setAuthChecked(true);
+  }, [router]);
+
+  const {
+    data: tournament,
+    isLoading,
+    isError,
+  } = useQuery<Tournament>({
+    queryKey: ['tournaments', tournamentId],
+    queryFn: ({ signal }) =>
+      apiFetch<Tournament>(`/tournaments/${tournamentId}`, { signal }),
+    enabled: authChecked && Number.isFinite(tournamentId),
+  });
+
+  // Khi query lỗi (vd. 404) → redirect home và toast.
+  useEffect(() => {
+    if (isError) {
+      toast.error('Không tìm thấy giải đấu');
+      router.push('/');
+    }
+  }, [isError, router]);
+
+  const loading = !authChecked || isLoading;
 
   const handleSuccess = () => {
     router.push(`/tournaments/${tournament?.id}`);

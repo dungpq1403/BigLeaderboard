@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './BracketManager.module.css';
 import GroupStageBracket from './GroupStageBracket';
 import SingleEliminationBracket from './SingleEliminationBracket';
@@ -9,8 +10,7 @@ import SplitGroupsModal from './SplitGroupsModal';
 import { toast } from 'react-toastify';
 import { useFormat } from '@/context/FormatContext';
 import { calculateGroupStageStats, Match as ScoringMatch } from '@/utils/GroupStageScoring';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch } from '@/lib/api';
 
 interface Tournament {
   id: number;
@@ -163,37 +163,36 @@ function computeQualifiedFromGroups(
   return qualifiers.slice(0, totalAdvancing).map((q) => ({ id: q.id, name: q.name }));
 }
 
+type BracketDataResponse = {
+  participants?: { id: number | string; name: string }[];
+  matches?: { id: number; teamAId: number; teamBId: number; groupId?: number | string }[];
+};
+
 export default function BracketManager({ tournamentId, tournament, isCreator = false }: BracketManagerProps) {
   const { formatNames } = useFormat();
+  const queryClient = useQueryClient();
   const [activeBracket, setActiveBracket] = useState<BracketType | null>(null);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [groupCount, setGroupCount] = useState(1);
   const [isClient, setIsClient] = useState(false);
-  const [bracketCreated, setBracketCreated] = useState(false);
-  const [participantList, setParticipantList] = useState<{ id: string; name: string }[]>([]);
-  const [groupMatches, setGroupMatches] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [bestOf, setBestOf] = useState<RoundBestOf[]>([]);
+  // bracketCreated được derive từ data của query (xem `bracketCreated` bên dưới),
+  // không còn là state cục bộ — tránh trùng nguồn dữ liệu.
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  useEffect(function(){
-    async function fetchRoundBestOf() {
-      try {
-        const response = await fetch(`${API_BASE}/tournaments/${tournamentId}/round-best-of`);
-        if (response.ok) {
-          const data = await response.json();
-          setBestOf(data || []);
-        }
-      } catch (error) {
-        console.log('Failed to fetch best of settings:', error);
-      }
-    }
-    fetchRoundBestOf();
-  }, [])
-    
+  // Query best-of settings cho từng vòng. Cache dùng chung với edit/detail page.
+  const { data: bestOf = [] } = useQuery<RoundBestOf[]>({
+    queryKey: ['tournaments', tournamentId, 'round-best-of'],
+    queryFn: ({ signal }) =>
+      apiFetch<RoundBestOf[]>(`/tournaments/${tournamentId}/round-best-of`, {
+        signal,
+        auth: false,
+      }),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
+
   // RoundBestOfManager lưu roundNumber là counter toàn cục (vd: group=1, single_elim=2),
   // nên ta lọc theo formatType rồi lấy theo thứ tự cục bộ trong format đó.
   const getBestOfForFormat = (formatType: string, round: number = 1): number => {
@@ -205,68 +204,27 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     return 3;
   };
 
-  // Fetch bracket data từ API (không cần auth hoặc auth optional)
-  // DB là source of truth: nếu DB không có matches thì bracket chưa được tạo.
-  const fetchBracketData = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE}/tournaments/${tournamentId}/bracket-data`);
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.participants) {
-          setParticipantList(data.participants.map((p: any) => ({
-            id: p.id.toString(),
-            name: p.name,
-          })));
-        }
+  // Query bracket-data: participants + matches. DB là source of truth.
+  // staleTime ngắn để khi creator update score ở component con, dữ liệu mới sẽ
+  // nhanh chóng được refetch khi invalidate.
+  const {
+    data: bracketData,
+    isLoading: bracketLoading,
+  } = useQuery<BracketDataResponse>({
+    queryKey: ['tournaments', tournamentId, 'bracket-data'],
+    queryFn: ({ signal }) =>
+      apiFetch<BracketDataResponse>(`/tournaments/${tournamentId}/bracket-data`, {
+        signal,
+        auth: false,
+      }),
+    enabled: isClient && Number.isFinite(tournamentId),
+  });
 
-        setGroupMatches(Array.isArray(data.matches) ? data.matches : []);
-
-        // Với giải KHÔNG có vòng bảng, bracket luôn sẵn sàng — các thể thức như
-        // single_elimination được sinh động từ participants, không cần khởi tạo
-        // qua modal chia bảng. Đồng thời dọn localStorage cũ (nếu user vừa edit
-        // bỏ format 'group') để tránh leftover keys gây nhiễu.
-        if (!hasGroupFormat) {
-          localStorage.removeItem(getBracketCreatedKey(tournamentId));
-          localStorage.removeItem(getGroupsCountKey(tournamentId));
-          setBracketCreated(true);
-          setGroupCount(1);
-          return;
-        }
-
-        const hasMatches = Array.isArray(data.matches) && data.matches.length > 0;
-        if (hasMatches) {
-          localStorage.setItem(getBracketCreatedKey(tournamentId), 'true');
-          setBracketCreated(true);
-
-          // Suy ra số bảng thực tế từ matches trong DB để khớp UI với dữ liệu thật
-          const uniqueGroupIds = Array.from(
-            new Set(data.matches.map((m: any) => m.groupId).filter(Boolean))
-          );
-          if (uniqueGroupIds.length > 0) {
-            setGroupCount(uniqueGroupIds.length);
-            localStorage.setItem(
-              getGroupsCountKey(tournamentId),
-              uniqueGroupIds.length.toString()
-            );
-          }
-        } else {
-          // DB rỗng → dọn localStorage cũ để tránh state "đã tạo" giả
-          localStorage.removeItem(getBracketCreatedKey(tournamentId));
-          localStorage.removeItem(getGroupsCountKey(tournamentId));
-          setBracketCreated(false);
-          setGroupCount(1);
-          setActiveBracket(null);
-          setGroupMatches([]);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch bracket data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const participantList = (bracketData?.participants ?? []).map((p) => ({
+    id: String(p.id),
+    name: p.name,
+  }));
+  const groupMatches = Array.isArray(bracketData?.matches) ? (bracketData!.matches as any[]) : [];
 
   // availableBrackets được derive trực tiếp từ tournament.formats để tab hiển thị
   // đúng theo thứ tự mà người tạo giải đã cấu hình ở modal Edit. Hàm
@@ -283,6 +241,45 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
   // đồ động từ danh sách participants nên KHÔNG cần bước khởi tạo bằng modal.
   // Nếu giải không có format 'group' → bracket coi như sẵn sàng hiển thị ngay.
   const hasGroupFormat = normalizedFormats.includes('group');
+
+  // Derive bracketCreated từ query data + cấu hình format hiện tại:
+  //  - Không có format 'group'  → bracket sẵn sàng ngay.
+  //  - Có 'group' và DB có matches → đã tạo.
+  //  - Còn lại → chưa tạo.
+  const hasMatches = groupMatches.length > 0;
+  const bracketCreated = hasGroupFormat ? hasMatches : true;
+  const loading = bracketLoading;
+
+  // Đồng bộ phụ trợ: cập nhật groupCount + dọn localStorage khi cấu hình thay
+  // đổi. Side-effects bắt buộc vì localStorage nằm ngoài React state.
+  useEffect(() => {
+    if (!isClient) return;
+    if (!hasGroupFormat) {
+      localStorage.removeItem(getBracketCreatedKey(tournamentId));
+      localStorage.removeItem(getGroupsCountKey(tournamentId));
+      setGroupCount(1);
+      return;
+    }
+    if (hasMatches) {
+      localStorage.setItem(getBracketCreatedKey(tournamentId), 'true');
+      const uniqueGroupIds = Array.from(
+        new Set(groupMatches.map((m) => m.groupId).filter(Boolean))
+      );
+      if (uniqueGroupIds.length > 0) {
+        setGroupCount(uniqueGroupIds.length);
+        localStorage.setItem(
+          getGroupsCountKey(tournamentId),
+          uniqueGroupIds.length.toString()
+        );
+      }
+    } else {
+      localStorage.removeItem(getBracketCreatedKey(tournamentId));
+      localStorage.removeItem(getGroupsCountKey(tournamentId));
+      setGroupCount(1);
+    }
+    // groupMatches là object reference — chỉ trigger lại khi length thay đổi
+    // hoặc các phụ thuộc khác đổi. Effect này là khá rẻ nên không tối ưu thêm.
+  }, [isClient, hasGroupFormat, hasMatches, groupMatches, tournamentId]);
 
   // Dùng làm dependency ổn định cho effect: dùng normalizedFormats (đã dedupe + sort
   // anchor) thay vì raw `tournament.formats` để effect chỉ chạy lại khi thứ tự hiển thị
@@ -318,7 +315,10 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
       return fallback;
     });
 
-    fetchBracketData();
+    // Khi format thay đổi → refetch để dữ liệu khớp với cấu hình mới.
+    queryClient.invalidateQueries({
+      queryKey: ['tournaments', tournamentId, 'bracket-data'],
+    });
     // availableBrackets được derive từ tournament.formats → formatsKey là dependency
     // ổn định đại diện cho cấu hình format.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -326,8 +326,40 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
 
   const participantCount = participantList.length;
 
-  // Chia danh sách team thành N bảng đều nhau và gọi API tạo matches
-  const createBracketWithGroupCount = async (count: number) => {
+  // Mutation tạo bracket: chia teams thành N bảng đều nhau ở client, gửi cho
+  // BE để tạo matches. Sau khi thành công invalidate bracket-data để re-render
+  // GroupStageBracket với matches mới (đặc biệt là `id` từ DB).
+  const initMutation = useMutation({
+    mutationFn: ({ groups, bestOf: bo }: { groups: any[]; bestOf: number }) =>
+      apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/initialize-group-matches`,
+        { method: 'POST', body: { groups, bestOf: bo } }
+      ),
+    onSuccess: (_, vars) => {
+      localStorage.setItem(getBracketCreatedKey(tournamentId), 'true');
+      localStorage.setItem(
+        getGroupsCountKey(tournamentId),
+        vars.groups.length.toString()
+      );
+      setGroupCount(vars.groups.length);
+
+      if (availableBrackets.length > 0) {
+        const firstBracket = availableBrackets[0].type;
+        setActiveBracket(firstBracket);
+        localStorage.setItem(getStorageKey(tournamentId), firstBracket);
+      }
+      toast.success('Đã tạo nhánh đấu thành công!');
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'bracket-data'],
+      });
+    },
+    onError: (err) => {
+      console.error('Failed to create bracket:', err);
+      toast.error('Không thể tạo nhánh đấu');
+    },
+  });
+
+  const createBracketWithGroupCount = (count: number) => {
     if (!isCreator) return;
 
     if (participantList.length < 2) {
@@ -335,15 +367,14 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
       return;
     }
 
-    const session = localStorage.getItem('authSession');
-    if (!session) {
+    if (!localStorage.getItem('authSession')) {
       toast.error('Bạn cần đăng nhập');
       return;
     }
 
     const safeCount = Math.max(1, Math.min(count, participantList.length));
     const teamsPerGroup = Math.ceil(participantList.length / safeCount);
-    const groups = [];
+    const groups: { id: string; name: string; teams: { id: string; name: string }[] }[] = [];
     for (let i = 0; i < safeCount; i++) {
       const startIdx = i * teamsPerGroup;
       const endIdx = Math.min(startIdx + teamsPerGroup, participantList.length);
@@ -357,59 +388,18 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
       }
     }
 
-    setLoading(true);
-    try {
-      const { token } = JSON.parse(session);
-      const groupBestOf = getBestOfForFormat('group', 1);
-      const response = await fetch(
-        `${API_BASE}/tournaments/${tournamentId}/initialize-group-matches`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ groups, bestOf: groupBestOf }),
-        }
-      );
-
-      if (response.ok) {
-        localStorage.setItem(getBracketCreatedKey(tournamentId), 'true');
-        localStorage.setItem(getGroupsCountKey(tournamentId), groups.length.toString());
-        setGroupCount(groups.length);
-        setBracketCreated(true);
-
-        if (availableBrackets.length > 0) {
-          const firstBracket = availableBrackets[0].type;
-          setActiveBracket(firstBracket);
-          localStorage.setItem(getStorageKey(tournamentId), firstBracket);
-        }
-        toast.success('Đã tạo nhánh đấu thành công!');
-
-        // Lấy lại dữ liệu để GroupStageBracket dùng đúng id DB
-        await fetchBracketData();
-      } else {
-        toast.error('Không thể tạo nhánh đấu');
-      }
-    } catch (error) {
-      console.error('Failed to create bracket:', error);
-      toast.error('Có lỗi xảy ra');
-    } finally {
-      setLoading(false);
-    }
+    const groupBestOf = getBestOfForFormat('group', 1);
+    initMutation.mutate({ groups, bestOf: groupBestOf });
   };
 
   const handleCreateBracket = () => {
     if (!isCreator) return;
 
     // Modal chia bảng chỉ dành cho thể thức "Vòng bảng". Với các thể thức khác,
-    // bracket đã được fetchBracketData đánh dấu sẵn sàng (xem ở trên) nên về lý
-    // thuyết nút "Tạo nhánh đấu" không hiển thị; guard này là biện pháp phòng vệ
-    // tránh gọi API initialize-group-matches sai context.
-    if (!hasGroupFormat) {
-      setBracketCreated(true);
-      return;
-    }
+    // bracketCreated đã true theo derive ở trên nên về lý thuyết nút "Tạo nhánh
+    // đấu" không hiển thị; guard này là biện pháp phòng vệ tránh gọi API sai
+    // context.
+    if (!hasGroupFormat) return;
 
     // Với giải đông đội, hỏi người tổ chức số bảng trước khi tạo
     if (participantList.length > 4) {

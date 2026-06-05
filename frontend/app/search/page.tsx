@@ -1,14 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import styles from "./page.module.css";
 import TournamentStatus from "@/components/tournament/TournamentStatus";
 import TournamentCreator from "@/components/tournament/TournamentCreator";
 import { useFormat } from "@/context/FormatContext";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch } from "@/lib/api";
 
 // Trang /search hiển thị nhiều kết quả hơn dropdown (50 thay vì 10).
 // Backend đã clamp ở 100 nên giá trị này an toàn.
@@ -74,46 +73,24 @@ function SearchPageInner() {
   const q = (searchParams.get("q") ?? "").trim();
   const { getFormatName, getFormatIcon } = useFormat();
 
-  const [results, setResults] = useState<Tournament[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!q) {
-      setResults([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-
-    (async () => {
-      try {
-        const res = await fetch(
-          `${API_BASE}/tournaments/search?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULTS_LIMIT}`,
-          { signal: controller.signal }
-        );
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        setResults(Array.isArray(data) ? data : []);
-      } catch (err) {
-        if ((err as Error)?.name !== "AbortError") {
-          console.error("Search page fetch failed:", err);
-          setError("Không thể tải kết quả. Vui lòng thử lại.");
-          setResults([]);
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
-
-    return () => controller.abort();
-  }, [q]);
+  // Query chỉ chạy khi có `q`. queryKey gồm cả `limit` để nếu sau này
+  // limit thay đổi sẽ tách cache đúng đắn (không reuse kết quả cũ).
+  // Tham số `signal` được TanStack truyền vào để tự cancel khi unmount /
+  // queryKey đổi, thay cho AbortController thủ công trước đây.
+  const {
+    data: results = [],
+    isLoading: loading,
+    error,
+  } = useQuery<Tournament[]>({
+    queryKey: ["tournaments", "search", q, { limit: SEARCH_RESULTS_LIMIT, page: true }],
+    enabled: q.length > 0,
+    queryFn: ({ signal }) =>
+      apiFetch<Tournament[]>(
+        `/tournaments/search?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULTS_LIMIT}`,
+        { signal, auth: false }
+      ),
+    select: (data) => (Array.isArray(data) ? data : []),
+  });
 
   // Group theo status. Trong cùng 1 group giữ nguyên thứ tự backend trả về
   // (createdAt DESC) để giải mới tạo lên trên.
@@ -163,7 +140,9 @@ function SearchPageInner() {
       )}
 
       {q && !loading && error && (
-        <div className={styles.errorBox}>{error}</div>
+        <div className={styles.errorBox}>
+          {error instanceof Error ? error.message : "Không thể tải kết quả. Vui lòng thử lại."}
+        </div>
       )}
 
       {q && !loading && !error && results.length === 0 && (
@@ -190,9 +169,6 @@ function SearchPageInner() {
 
                 <div className={styles.grid}>
                   {items.map((t) => {
-                    // Card không thể là <Link> vì bên trong đã có TournamentCreator
-                    // (cũng là <Link>), HTML cấm <a> lồng <a>. Dùng div + onClick
-                    // và Enter/Space cho keyboard a11y, giống pattern TournamentList.
                     const goToTournament = () =>
                       router.push(`/tournaments/${t.id}`);
 
@@ -232,23 +208,16 @@ function SearchPageInner() {
                             />
                           </div>
 
-                          <div
-                            className={styles.cardMeta}
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                          <div className={styles.cardMeta}>
                             {t.game && (
-                              <Link
-                                href={`/game/${t.game.id}`}
-                                className={styles.gameBadge}
-                                title={`Xem trang game ${t.game.name}`}
-                              >
+                              <div className={styles.gameBadge}>
                                 <span className={styles.gameBadgeIcon} aria-hidden>
                                   {t.game.icon || "🎮"}
                                 </span>
                                 <span className={styles.gameBadgeName}>
                                   {t.game.name}
                                 </span>
-                              </Link>
+                              </div>
                             )}
                             <TournamentCreator
                               userId={t.creator?.id || 0}

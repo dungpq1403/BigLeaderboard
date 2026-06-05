@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './TournamentList.module.css';
 import TournamentStatus from './TournamentStatus';
 import RegistrationStatus from '@/components/registration/RegistrationStatus';
 import TournamentCreator from './TournamentCreator';
 import DeleteTournamentButton from './DeleteTournamentButton';
 import { useFormat } from '@/context/FormatContext';
+import { apiFetch } from '@/lib/api';
 
 type Tournament = {
   id: number;
@@ -32,78 +34,93 @@ type User = {
   fullName: string;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
 interface TournamentListProps {
   gameId: number;
 }
 
 export default function TournamentList({ gameId }: TournamentListProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { getFormatName, getFormatIcon } = useFormat();
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
-  const [users, setUsers] = useState<Record<number, User>>({});
-  const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
-  const fetchData = async () => {
-    try {
-      const session = localStorage.getItem('authSession');
-      if (session) {
-        const { user } = JSON.parse(session);
-        setCurrentUserId(user.id);
-      }
-      
-      const response = await fetch(`${API_BASE}/games/${gameId}/tournaments`);
-      const data = await response.json();
-      const tournamentsData = Array.isArray(data) ? data : [];
-      setTournaments(tournamentsData);
-      
-      const userIds = [...new Set(tournamentsData.map((t: Tournament) => t.createdBy))];
-      if (userIds.length > 0) {
-        const userPromises = userIds.map((id: number) => 
-          fetch(`${API_BASE}/users/${id}`).then(res => res.json())
-        );
-        const userResults = await Promise.all(userPromises);
-        const userMap: Record<number, User> = {};
-        userResults.forEach(user => {
-          if (user && user.id) {
-            userMap[user.id] = user;
-          }
-        });
-        setUsers(userMap);
-      }
-    } catch (error) {
-      console.error('Failed to fetch tournaments:', error);
-      setTournaments([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // currentUserId chỉ đọc 1 lần lúc mount; không phải server state nên không
+  // bỏ vào useQuery. Sau khi có authStore (Zustand) sẽ thay bằng selector.
   useEffect(() => {
-    fetchData();
-  }, [gameId]);
+    const session = localStorage.getItem('authSession');
+    if (session) {
+      try {
+        const { user } = JSON.parse(session);
+        setCurrentUserId(user?.id ?? null);
+      } catch {
+        setCurrentUserId(null);
+      }
+    }
+  }, []);
+
+  const {
+    data: tournaments = [],
+    isLoading: tournamentsLoading,
+  } = useQuery<Tournament[]>({
+    queryKey: ['games', gameId, 'tournaments'],
+    queryFn: ({ signal }) =>
+      apiFetch<Tournament[]>(`/games/${gameId}/tournaments`, { signal, auth: false }),
+    // API trả non-array đôi khi (lỗi), bọc tránh crash UI.
+    select: (data) => (Array.isArray(data) ? data : []),
+  });
+
+  // Tách danh sách createdBy unique để fetch user info song song qua Query
+  // riêng. Mỗi user 1 queryKey ['users', id] để các component khác (vd.
+  // TournamentDetail, search dropdown) reuse cache cùng key.
+  const userIds = useMemo(
+    () => Array.from(new Set(tournaments.map((t) => t.createdBy))),
+    [tournaments]
+  );
+
+  const { data: users = {} } = useQuery<Record<number, User>>({
+    queryKey: ['users', 'byIds', userIds],
+    enabled: userIds.length > 0,
+    queryFn: async ({ signal }) => {
+      const results = await Promise.all(
+        userIds.map(async (id) => {
+          // Đọc cache trước → nếu user đã được fetch ở nơi khác, không gọi API.
+          const cached = queryClient.getQueryData<User>(['users', id]);
+          if (cached) return cached;
+          const u = await apiFetch<User>(`/users/${id}`, { signal, auth: false });
+          // Seed cache để các Query đơn lẻ khác cũng có sẵn dữ liệu.
+          if (u?.id) queryClient.setQueryData(['users', u.id], u);
+          return u;
+        })
+      );
+      const map: Record<number, User> = {};
+      results.forEach((u) => {
+        if (u?.id) map[u.id] = u;
+      });
+      return map;
+    },
+  });
 
   const handleCardClick = (tournamentId: number) => {
     router.push(`/tournaments/${tournamentId}`);
   };
 
-  const handleDeleteSuccess = (deletedId: number) => {
-    setTournaments(prev => prev.filter(t => t.id !== deletedId));
+  // Sau delete: invalidate query để Query tự refetch list mới thay vì
+  // mutate state thủ công như trước. Đỡ rủi ro state lệch giữa server/client.
+  const handleDeleteSuccess = () => {
+    queryClient.invalidateQueries({ queryKey: ['games', gameId, 'tournaments'] });
     router.push(`/game/${gameId}`);
   };
 
+  // Sau khi user đăng ký/hủy đăng ký: invalidate để cập nhật số participant.
   const handleRegistrationChange = () => {
-    // Refresh tournament list to update registration status
-    fetchData();
+    queryClient.invalidateQueries({ queryKey: ['games', gameId, 'tournaments'] });
   };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   };
 
-  if (loading) {
+  if (tournamentsLoading) {
     return <div className={styles.loading}>Đang tải giải đấu...</div>;
   }
 
@@ -184,7 +201,7 @@ export default function TournamentList({ gameId }: TournamentListProps) {
                 <DeleteTournamentButton 
                   tournamentId={tournament.id}
                   tournamentName={tournament.name}
-                  onDelete={() => handleDeleteSuccess(tournament.id)}
+                  onDelete={handleDeleteSuccess}
                   variant="icon"
                 />
               )}

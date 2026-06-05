@@ -4,6 +4,7 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import styles from './EditTournamentForm.module.css';
 import FormatOrderSelector from '@/components/FormatOrderSelector';
 import ContactList from '@/components/ContactList';
@@ -13,9 +14,7 @@ import { useDeleteImage } from '@/hooks/useDeleteImage';
 import TeamSizeSelector from '@/components/team/TeamSizeSelector';
 import RoundBestOfManager from '@/components/BO/RoundBestOfManager';
 import ThirdPlaceCheckbox from '@/components/ThirdPlaceCheckbox';
-
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch, ApiError } from '@/lib/api';
 
 const FORMAT_NAMES: Record<string, string> = {
   swiss: 'Vòng Swiss',
@@ -53,6 +52,7 @@ interface EditTournamentFormProps {
 
 export default function EditTournamentForm({ tournament, onSuccess, onCancel }: EditTournamentFormProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { deleteImage } = useDeleteImage();
   const [formData, setFormData] = useState({
     name: tournament.name || '',
@@ -70,8 +70,6 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
   const [advancementSteps, setAdvancementSteps] = useState<(number | null)[]>(tournament.advancementSteps || []);
   const [groupColumns, setGroupColumns] = useState<any[]>(tournament.groupColumns || []);
   const [contacts, setContacts] = useState<any[]>(tournament.contacts || []);
-  const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [teamSize, setTeamSize] = useState<{
     teamMembers: number | null;
@@ -118,54 +116,46 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append('image', file);
+      return apiFetch<{ imageUrl: string }>(`/upload/tournament-image`, {
+        method: 'POST',
+        body: fd,
+      });
+    },
+    onSuccess: (data) => {
+      setFormData((prev) => ({ ...prev, imageUrl: data.imageUrl }));
+      toast.success('Upload ảnh thành công!');
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        toast.error('Vui lòng đăng nhập');
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Upload thất bại';
+      toast.error(msg);
+    },
+  });
+  const uploading = uploadMutation.isPending;
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     if (file.size > 10 * 1024 * 1024) {
       toast.error('Ảnh không được vượt quá 10MB');
       return;
     }
-    
+
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
       toast.error('Chỉ chấp nhận file JPEG, PNG, GIF, WEBP');
       return;
     }
-    
-    setUploading(true);
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Vui lòng đăng nhập');
-        return;
-      }
-      
-      const { token } = JSON.parse(session);
-      const uploadForm = new FormData();
-      uploadForm.append('image', file);
-      
-      const response = await fetch(`${API_BASE}/upload/tournament-image`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: uploadForm,
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        toast.error(data.message || 'Upload thất bại');
-        return;
-      }
-      
-      setFormData(prev => ({ ...prev, imageUrl: data.imageUrl }));
-      toast.success('Upload ảnh thành công!');
-    } catch (error) {
-      toast.error('Không thể upload ảnh');
-    } finally {
-      setUploading(false);
-    }
+
+    uploadMutation.mutate(file);
   };
 
   const validateForm = () => {
@@ -212,79 +202,65 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
 
   const hasSingleElimination = formatOrder.includes('single_elimination');
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-
-    setLoading(true);
-
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
+  const updateMutation = useMutation({
+    mutationFn: (submitData: Record<string, unknown>) =>
+      apiFetch<{ message?: string }>(`/tournaments/${tournament.id}`, {
+        method: 'PUT',
+        body: submitData,
+      }),
+    onSuccess: () => {
+      toast.success('Cập nhật giải đấu thành công!');
+      queryClient.invalidateQueries({ queryKey: ['tournaments', tournament.id] });
+      queryClient.invalidateQueries({
+        queryKey: ['games', tournament.gameId, 'tournaments'],
+      });
+      if (onSuccess) onSuccess();
+      else router.push(`/tournaments/${tournament.id}`);
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
         toast.error('Vui lòng đăng nhập');
         router.push('/login');
         return;
       }
+      const msg = err instanceof Error ? err.message : 'Cập nhật giải đấu thất bại';
+      toast.error(msg);
+    },
+  });
+  const loading = updateMutation.isPending;
 
-      const { token } = JSON.parse(session);
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!validateForm()) return;
 
-      const submitData = {
-        name: formData.name,
-        formats: formatOrder,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        maxParticipants: parseInt(formData.maxParticipants),
-        participantType: formData.participantType,
-        prize: parseFloat(formData.prize) || 0,
-        description: formData.description,
-        imageUrl: formData.imageUrl,
-        contacts: contacts.filter(c => c.contact && c.contact.trim() !== ''),
-        advancementSteps:
-          formatOrder.length > 1
-            ? advancementSteps.map((v) => {
-                if (v == null || v <= 0) {
-                  throw new Error('advancementSteps should be validated before submit');
-                }
-                return v;
-              })
-            : null,
-        groupColumns: formatOrder.includes('group') ? groupColumns : null,
-        teamMembers: formData.participantType === 'team' ? teamSize.teamMembers : null,
-        teamSubstitutes: formData.participantType === 'team' ? teamSize.teamSubstitutes : null,
-        roundBestOfs: roundBestOfs.filter(r => r.bestOf),
-        thirdPlaceMatch: hasSingleElimination ? thirdPlaceMatch : false,
-      };
+    const submitData = {
+      name: formData.name,
+      formats: formatOrder,
+      startDate: formData.startDate,
+      endDate: formData.endDate,
+      maxParticipants: parseInt(formData.maxParticipants),
+      participantType: formData.participantType,
+      prize: parseFloat(formData.prize) || 0,
+      description: formData.description,
+      imageUrl: formData.imageUrl,
+      contacts: contacts.filter((c) => c.contact && c.contact.trim() !== ''),
+      advancementSteps:
+        formatOrder.length > 1
+          ? advancementSteps.map((v) => {
+              if (v == null || v <= 0) {
+                throw new Error('advancementSteps should be validated before submit');
+              }
+              return v;
+            })
+          : null,
+      groupColumns: formatOrder.includes('group') ? groupColumns : null,
+      teamMembers: formData.participantType === 'team' ? teamSize.teamMembers : null,
+      teamSubstitutes: formData.participantType === 'team' ? teamSize.teamSubstitutes : null,
+      roundBestOfs: roundBestOfs.filter((r) => r.bestOf),
+      thirdPlaceMatch: hasSingleElimination ? thirdPlaceMatch : false,
+    };
 
-      const response = await fetch(`${API_BASE}/tournaments/${tournament.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(submitData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || 'Cập nhật giải đấu thất bại');
-        return;
-      }
-
-      toast.success('Cập nhật giải đấu thành công!');
-      
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.push(`/tournaments/${tournament.id}`);
-      }
-    } catch (error) {
-      console.error('Update error:', error);
-      toast.error('Không thể kết nối đến server');
-    } finally {
-      setLoading(false);
-    }
+    updateMutation.mutate(submitData);
   };
 
   const isSingleEliminationLast = formatOrder.length > 0 && 

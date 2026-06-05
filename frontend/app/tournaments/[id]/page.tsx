@@ -2,8 +2,9 @@
 "use client";
 
 import { notFound, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './page.module.css';
 import TournamentStatus from '@/components/tournament/TournamentStatus';
 import RegistrationStatus from '@/components/registration/RegistrationStatus';
@@ -14,8 +15,7 @@ import EditTournamentForm from '@/components/edit/EditTournamentForm';
 import { useFormat } from '@/context/FormatContext';
 import Link from 'next/link';
 import BracketManager from '@/components/brackets/BracketManager';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface TournamentDetail {
   id: number;
@@ -64,96 +64,86 @@ interface TournamentDetailPageProps {
 
 export default function TournamentDetailPage({ params }: TournamentDetailPageProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { getFormatName, getFormatIcon } = useFormat();
-  const [tournament, setTournament] = useState<TournamentDetail | null>(null);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
-  const [isCreator, setIsCreator] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  // Next.js 16 params là Promise → unwrap đồng bộ bằng React.use().
+  const { id: idParam } = use(params);
+  const tournamentId = Number(idParam);
+
   const [showEditModal, setShowEditModal] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [participants, setParticipants] = useState<any[]>([]);
-  const [roundBestOf, setRoundBestOf] = useState <RoundBestOf[]>([])
 
+  // Lấy currentUserId từ localStorage (sẽ thay bằng auth store sau).
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   useEffect(() => {
     setMounted(true);
+    try {
+      const raw = localStorage.getItem('authSession');
+      if (raw) setCurrentUserId(JSON.parse(raw)?.user?.id ?? null);
+    } catch {
+      setCurrentUserId(null);
+    }
     return () => setMounted(false);
   }, []);
 
-  const fetchTournamentData = async () => {
-    const { id } = await params;
-
-    try {
-      const session = localStorage.getItem('authSession');
-      let token = ''
-      if (session) {
-        const { user, token: t } = JSON.parse(session);
-        setCurrentUserId(user.id);
-        token = t;
+  // Tournament detail — query chính. Trả null khi 404 để giữ tính idempotent
+  // và tránh React Query retry vô tận. notFound() sẽ chạy trong render.
+  const {
+    data: tournament,
+    isLoading: loadingTournament,
+    isError: tournamentError,
+  } = useQuery<TournamentDetail | null>({
+    queryKey: ['tournaments', tournamentId],
+    queryFn: async ({ signal }) => {
+      try {
+        return await apiFetch<TournamentDetail>(`/tournaments/${tournamentId}`, {
+          signal,
+          auth: false,
+        });
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
       }
-      
-      const tournamentResponse = await fetch(`${API_BASE}/tournaments/${id}`);
-      if (!tournamentResponse.ok) {
-        setTournament(null);
-        setLoading(false);
-        return;
-      }
-      const tournamentData = await tournamentResponse.json();
-      setTournament(tournamentData);
-      
-      if (session) {
-        const { user } = JSON.parse(session);
-        if (tournamentData.createdBy === user.id) {
-          setIsCreator(true);
-        }
-      }
+    },
+    enabled: Number.isFinite(tournamentId),
+  });
 
-      const contactsResponse = await fetch(`${API_BASE}/tournaments/${id}/contacts`);
-      const contactsData = await contactsResponse.json();
-      setContacts(Array.isArray(contactsData) ? contactsData : []);
+  // Contacts + roundBestOf — không phụ thuộc auth, fetch song song với tournament.
+  const { data: contacts = [] } = useQuery<Contact[]>({
+    queryKey: ['tournaments', tournamentId, 'contacts'],
+    queryFn: ({ signal }) =>
+      apiFetch<Contact[]>(`/tournaments/${tournamentId}/contacts`, { signal, auth: false }),
+    enabled: Number.isFinite(tournamentId),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
 
-      const roundBORes = await fetch(`${API_BASE}/tournaments/${id}/round-best-of`);
-      const roundBOData = await roundBORes.json();
-      setRoundBestOf(Array.isArray(roundBOData) ? roundBOData : []);
+  const { data: roundBestOf = [] } = useQuery<RoundBestOf[]>({
+    queryKey: ['tournaments', tournamentId, 'round-best-of'],
+    queryFn: ({ signal }) =>
+      apiFetch<RoundBestOf[]>(`/tournaments/${tournamentId}/round-best-of`, {
+        signal,
+        auth: false,
+      }),
+    enabled: Number.isFinite(tournamentId),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
 
-      if (token) {
-        try{
-          const participantsResponse = await fetch(`${API_BASE}/tournaments/${id}/participants`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (participantsResponse.ok) {
-            const participantsData = await participantsResponse.json();
-            setParticipants(Array.isArray(participantsData) ? participantsData : []);
-          }
-        } catch (error) {
-          console.error('Failed to fetch participants:', error);
-        }
-      };
-
-    } catch (error) {
-      console.error('Failed to fetch tournament:', error);
-      setTournament(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTournamentData();
-  }, [params, refreshKey]);
+  // Loading tổng: chỉ block render khi tournament chưa có. contacts/roundBO
+  // load song song và lỗi trong chúng không nên chặn UI chính.
+  const loading = loadingTournament;
+  const isCreator = !!(tournament && currentUserId && tournament.createdBy === currentUserId);
 
   const handleDeleteSuccess = () => {
     router.push(`/game/${tournament?.gameId}`);
   };
 
   const handleRegistrationChange = () => {
-    setRefreshKey(prev => prev + 1);
+    queryClient.invalidateQueries({ queryKey: ['tournaments', tournamentId] });
   };
 
   const handleEditSuccess = () => {
     setShowEditModal(false);
-    setRefreshKey(prev => prev + 1);
+    queryClient.invalidateQueries({ queryKey: ['tournaments', tournamentId] });
   };
 
   const formatCurrency = (amount: number) => {
@@ -191,7 +181,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
     );
   }
 
-  if (!tournament) {
+  if (!tournament || tournamentError) {
     notFound();
   }
 

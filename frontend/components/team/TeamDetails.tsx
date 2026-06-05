@@ -4,13 +4,8 @@ import { useState } from 'react';
 import styles from './TeamDetails.module.css';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
-interface Profile {
-  userId: number;
-  email: string;
-}
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface Member {
   fullName: string;
@@ -28,41 +23,42 @@ interface TeamDetailsProps {
 
 export default function TeamDetails({ teamName, members, substitutes }: TeamDetailsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [profile, setProfile] = useState<Profile | null>(null);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const toggleExpand = () => {
     setIsExpanded(!isExpanded);
   };
 
-  async function handleOnClickTable(member: any) {
-    try{
-      const session = localStorage.getItem('authSession');
-      if (!session) {
+  // Tra cứu userId qua email khi user click một row. Dùng mutation thay vì
+  // query vì đây là on-demand action, không cần cache (mỗi click có thể là
+  // email khác). Seed cache user theo id sau khi lấy được.
+  const lookupMutation = useMutation({
+    mutationFn: (email: string) =>
+      apiFetch<{ id: number; email: string }>(`/users/email/${email}`),
+    onSuccess: (data) => {
+      if (data?.id) {
+        // Seed cache users theo id để khi navigate vào profile page khỏi
+        // phải fetch lại tài khoản nếu đã có dữ liệu.
+        queryClient.setQueryData(['users', data.id], data);
+        router.push(`/profile/${data.id}`);
+      } else {
+        toast.error('Người dùng không tồn tại');
+      }
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
         toast.error('Vui lòng đăng nhập');
         router.push('/login');
         return;
       }
+      console.log(`Failed to fetch user email: ${err}`);
+    },
+  });
 
-      const { token } = JSON.parse(session);
-
-      const emailRes = await fetch(`${API_BASE}/users/email/${member.email}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const emailData = await emailRes.json();
-
-      if (emailData.id) {
-        router.push(`/profile/${emailData.id}`)
-      } else {
-        toast.error('Người dùng không tồn tại')
-      }
-
-    } catch (error) {
-      console.log(`Failed to fetch user email: ${error}`)
-    }
+  function handleOnClickTable(member: Member) {
+    if (!member.email) return;
+    lookupMutation.mutate(member.email);
   }
 
   return (

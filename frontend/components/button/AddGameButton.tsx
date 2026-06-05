@@ -1,69 +1,52 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
 import styles from './AddGameButton.module.css';
 import CreateGameForm from '@/components/CreateGameForm';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 interface AddGameButtonProps {
   onGameAdded?: () => void;
 }
 
+// Đọc role từ localStorage. Hàm pure không state nên có thể gọi đồng bộ.
+function getAdminFromSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('authSession');
+    if (!raw) return false;
+    const { user } = JSON.parse(raw);
+    return user?.role === 'admin';
+  } catch {
+    return false;
+  }
+}
+
 export default function AddGameButton({ onGameAdded }: AddGameButtonProps) {
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [checking, setChecking] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  // Tick để re-render khi 'auth-changed'. Không lưu isAdmin trong state
+  // mà compute đồng bộ ở render — tránh setState-in-effect.
+  const [, forceTick] = useState(0);
 
   useEffect(() => {
-    const checkAdmin = async () => {
-      setChecking(true);
-      const session = localStorage.getItem('authSession');
-      
-      if (!session) {
-        setIsAdmin(false);
-        setChecking(false);
-        return;
-      }
-      
-      try {
-        const { user } = JSON.parse(session);
-        
-        if (user && user.role === 'admin') {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
-        }
-      } catch (error) {
-        console.error('Failed to check admin status:', error);
-        setIsAdmin(false);
-      } finally {
-        setChecking(false);
-      }
-    };
-    
-    checkAdmin();
-    
-    const handleAuthChanged = () => {
-      checkAdmin();
-    };
-    
-    window.addEventListener('auth-changed', handleAuthChanged);
-    window.addEventListener('storage', handleAuthChanged);
-    
+    setMounted(true);
+    const handler = () => forceTick((n) => n + 1);
+    window.addEventListener('auth-changed', handler);
+    window.addEventListener('storage', handler);
     return () => {
-      window.removeEventListener('auth-changed', handleAuthChanged);
-      window.removeEventListener('storage', handleAuthChanged);
+      window.removeEventListener('auth-changed', handler);
+      window.removeEventListener('storage', handler);
     };
   }, []);
+
+  const [showModal, setShowModal] = useState(false);
+  const isAdmin = mounted && getAdminFromSession();
 
   const handleSuccess = () => {
     setShowModal(false);
     if (onGameAdded) onGameAdded();
   };
 
-  if (checking) return null;
+  if (!mounted) return null;
   if (!isAdmin) return null;
 
   return (

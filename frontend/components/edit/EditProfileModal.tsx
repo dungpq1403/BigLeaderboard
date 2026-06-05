@@ -2,8 +2,9 @@
 
 import { useState, FormEvent, useEffect } from 'react';
 import { toast } from 'react-toastify';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import styles from './EditProfileModal.module.css';
-import TeamSizeSelector from '@/components/team/TeamSizeSelector';
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -19,16 +20,14 @@ interface EditProfileModalProps {
   };
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
 export default function EditProfileModal({ isOpen, onClose, onSuccess, user }: EditProfileModalProps) {
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     birthDate: '',
     description: '',
   });
-  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
 
@@ -66,52 +65,34 @@ export default function EditProfileModal({ isOpen, onClose, onSuccess, user }: E
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-    
-    setLoading(true);
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
+  const updateMutation = useMutation({
+    mutationFn: (body: typeof formData) =>
+      apiFetch<{ message?: string }>(`/users/${user.id}`, {
+        method: 'PUT',
+        body,
+      }),
+    onSuccess: () => {
+      toast.success('Cập nhật thông tin thành công!');
+      queryClient.invalidateQueries({ queryKey: ['users', user.id] });
+      onSuccess();
+      onClose();
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
         toast.error('Vui lòng đăng nhập lại');
         onClose();
         return;
       }
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/users/${user.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(formData),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        toast.error(data.message || 'Cập nhật thất bại');
-        return;
-      }
-      
-      toast.success('Cập nhật thông tin thành công!');
-      
-      // Gọi onSuccess để cập nhật UI, không reload
-      onSuccess();
-      
-      // Đóng modal
-      onClose();
-      
-    } catch (error) {
-      toast.error('Không thể kết nối đến server');
-    } finally {
-      setLoading(false);
-    }
+      const msg = err instanceof Error ? err.message : 'Cập nhật thất bại';
+      toast.error(msg);
+    },
+  });
+  const loading = updateMutation.isPending;
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+    updateMutation.mutate(formData);
   };
 
   if (!isOpen) return null;

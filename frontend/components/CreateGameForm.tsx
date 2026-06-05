@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import styles from './CreateGameForm.module.css';
 import { useDeleteImage } from '@/hooks/useDeleteImage';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface CreateGameFormProps {
   onSuccess?: () => void;
@@ -16,9 +16,7 @@ interface CreateGameFormProps {
 export default function CreateGameForm({ onSuccess, onCancel }: CreateGameFormProps) {
   const { deleteImage } = useDeleteImage();
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [uploadingBackground, setUploadingBackground] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
@@ -68,116 +66,67 @@ export default function CreateGameForm({ onSuccess, onCancel }: CreateGameFormPr
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'background') => {
+  // Một mutation duy nhất xử lý cả 2 endpoint upload. Phân biệt qua `type`
+  // trong mutationFn; isPending sẽ thay cho 2 state `uploadingImage` và
+  // `uploadingBackground` cũ — nhưng cần biết loại nào đang upload.
+  // Dùng `variables` để derive.
+  const uploadMutation = useMutation({
+    mutationFn: async ({ file, type }: { file: File; type: 'image' | 'background' }) => {
+      const fd = new FormData();
+      fd.append('image', file);
+      const endpoint = type === 'image' ? '/upload/game-image' : '/upload/game-background';
+      return apiFetch<{ imageUrl: string }>(endpoint, { method: 'POST', body: fd });
+    },
+    onSuccess: (data, vars) => {
+      if (vars.type === 'image') {
+        setFormData((prev) => ({ ...prev, imageUrl: data.imageUrl }));
+        toast.success('Upload ảnh game thành công!');
+      } else {
+        setFormData((prev) => ({ ...prev, backgroundImage: data.imageUrl }));
+        toast.success('Upload ảnh nền thành công!');
+      }
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        toast.error('Vui lòng đăng nhập');
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Upload thất bại';
+      toast.error(msg);
+    },
+  });
+  const uploadingImage = uploadMutation.isPending && uploadMutation.variables?.type === 'image';
+  const uploadingBackground =
+    uploadMutation.isPending && uploadMutation.variables?.type === 'background';
+
+  const handleImageUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: 'image' | 'background',
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     if (file.size > (type === 'image' ? 5 : 10) * 1024 * 1024) {
       toast.error(`Ảnh ${type === 'image' ? 'game' : 'nền'} không được vượt quá ${type === 'image' ? '5' : '10'}MB`);
       return;
     }
-    
+
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
       toast.error('Chỉ chấp nhận file JPEG, PNG, GIF, WEBP');
       return;
     }
-    
-    if (type === 'image') {
-      setUploadingImage(true);
-    } else {
-      setUploadingBackground(true);
-    }
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Vui lòng đăng nhập');
-        return;
-      }
-      
-      const { token } = JSON.parse(session);
-      const formDataUpload = new FormData();
-      formDataUpload.append('image', file);
-      
-      const endpoint = type === 'image' ? '/upload/game-image' : '/upload/game-background';
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formDataUpload,
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        toast.error(data.message || 'Upload thất bại');
-        return;
-      }
-      
-      if (type === 'image') {
-        setFormData(prev => ({ ...prev, imageUrl: data.imageUrl }));
-        toast.success('Upload ảnh game thành công!');
-      } else {
-        setFormData(prev => ({ ...prev, backgroundImage: data.imageUrl }));
-        toast.success('Upload ảnh nền thành công!');
-      }
-    } catch (error) {
-      toast.error('Không thể upload ảnh');
-    } finally {
-      if (type === 'image') {
-        setUploadingImage(false);
-      } else {
-        setUploadingBackground(false);
-      }
-    }
+
+    uploadMutation.mutate({ file, type });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Vui lòng đăng nhập');
-        if (onCancel) onCancel();
-        setLoading(false);
-        return;
-      }
-      
-      const { token, user } = JSON.parse(session);
-      
-      if (user.role !== 'admin') {
-        toast.error('Bạn không có quyền admin để thêm game');
-        setLoading(false);
-        return;
-      }
-      
-      const submitData = {
-        ...formData,
-        rating: parseFloat(formData.rating) || 0,
-        platforms: formData.platforms.filter(p => p.trim()),
-        genre: formData.genre.filter(g => g.trim()),
-      };
-      
-      const response = await fetch(`${API_BASE}/games`, {
+  const createMutation = useMutation({
+    mutationFn: (submitData: Record<string, unknown>) =>
+      apiFetch<{ id?: number; message?: string }>(`/games`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(submitData),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        toast.error(data.message || 'Thêm game thất bại');
-        return;
-      }
-      
+        body: submitData,
+      }),
+    onSuccess: () => {
       toast.success('Thêm game thành công!');
       setFormData({
         name: '',
@@ -194,14 +143,51 @@ export default function CreateGameForm({ onSuccess, onCancel }: CreateGameFormPr
         platforms: [''],
         genre: [''],
       });
-      
+      queryClient.invalidateQueries({ queryKey: ['games', 'list'] });
       if (onSuccess) onSuccess();
       router.refresh();
-    } catch (error) {
-      toast.error('Không thể kết nối server');
-    } finally {
-      setLoading(false);
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        toast.error('Vui lòng đăng nhập');
+        if (onCancel) onCancel();
+        return;
+      }
+      const msg = err instanceof Error ? err.message : 'Thêm game thất bại';
+      toast.error(msg);
+    },
+  });
+  const loading = createMutation.isPending;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Check admin role trước khi mutate. Logic này dạng "client-side hint",
+    // BE vẫn enforce server-side khi nhận request.
+    try {
+      const raw = localStorage.getItem('authSession');
+      if (!raw) {
+        toast.error('Vui lòng đăng nhập');
+        if (onCancel) onCancel();
+        return;
+      }
+      const { user } = JSON.parse(raw);
+      if (user?.role !== 'admin') {
+        toast.error('Bạn không có quyền admin để thêm game');
+        return;
+      }
+    } catch {
+      toast.error('Vui lòng đăng nhập');
+      return;
     }
+
+    const submitData = {
+      ...formData,
+      rating: parseFloat(formData.rating) || 0,
+      platforms: formData.platforms.filter((p) => p.trim()),
+      genre: formData.genre.filter((g) => g.trim()),
+    };
+    createMutation.mutate(submitData);
   };
 
   const handleRemoveGameImage = async () => {

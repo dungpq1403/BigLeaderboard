@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
+import { useQueryClient } from '@tanstack/react-query';
 import styles from './GroupStageBracket.module.css';
 import { calculateGroupStageStats, Match, TeamStats } from '@/utils/GroupStageScoring';
 import ScheduleMatchesModal, { PendingMatch } from './ScheduleMatchesModal';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface Team {
   id: string;
@@ -76,6 +76,7 @@ export default function GroupStageBracket({
   onGroupChange, 
   onSplitGroups,
 }: GroupStageBracketProps) {
+  const queryClient = useQueryClient();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -94,21 +95,24 @@ export default function GroupStageBracket({
     return DEFAULT_GROUP_COLUMNS;
   }, [groupColumns]);
 
-  // Fetch matches từ API
-  const fetchMatches = async () => {
+  // Helper kiểm tra session — apiFetch tự gắn auth header nên không cần token đây.
+  const hasSession = () =>
+    typeof window !== 'undefined' && !!localStorage.getItem('authSession');
+
+  // Fetch matches từ API. Hàm imperative (không phải useQuery) vì initGroups
+  // bên dưới gọi nó từ effect và có thể gọi lại sau khi ensure cặp đấu mới.
+  // Cache thủ công qua queryClient để các component khác cũng dùng được.
+  const fetchMatches = async (): Promise<MatchData[]> => {
     try {
-      const session = localStorage.getItem('authSession');
-      const token = session ? JSON.parse(session).token : null;
-      
-      const response = await fetch(`${API_BASE}/tournaments/${tournamentId}/group-matches`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      const data = await queryClient.fetchQuery<{ matches?: MatchData[] }>({
+        queryKey: ['tournaments', tournamentId, 'group-matches'],
+        queryFn: ({ signal }) =>
+          apiFetch<{ matches?: MatchData[] }>(
+            `/tournaments/${tournamentId}/group-matches`,
+            { signal }
+          ),
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        return data.matches || [];
-      }
-      return [];
+      return data?.matches ?? [];
     } catch (error) {
       console.error('Failed to fetch matches:', error);
       return [];
@@ -116,39 +120,47 @@ export default function GroupStageBracket({
   };
 
   // Lưu kết quả trận đấu vào API
-  const saveMatchResult = async (matchId: string, teamAScore: number, teamBScore: number, winnerId: string | null) => {
+  const saveMatchResult = async (
+    matchId: string,
+    teamAScore: number,
+    teamBScore: number,
+    winnerId: string | null,
+  ): Promise<boolean> => {
     // Chặn các id tạm do frontend tạo (vd: "match-...") để tránh gọi API thừa và báo lỗi rõ ràng cho người dùng
     if (typeof matchId === 'string' && matchId.startsWith('match-')) {
       toast.error('Trận đấu này chưa được khởi tạo trong CSDL. Hãy tạo lại nhánh đấu.');
       return false;
     }
 
+    if (!hasSession()) {
+      toast.error('Bạn cần đăng nhập để cập nhật kết quả');
+      return false;
+    }
+
     try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Bạn cần đăng nhập để cập nhật kết quả');
-        return false;
-      }
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/tournaments/${tournamentId}/group-matches/${matchId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ teamAScore, teamBScore, winnerId }),
+      await apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/group-matches/${matchId}`,
+        {
+          method: 'PUT',
+          body: { teamAScore, teamBScore, winnerId },
+        }
+      );
+      // Invalidate cache để mọi nơi đọc group-matches đều thấy giá trị mới.
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'group-matches'],
       });
-      
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        toast.error(errBody?.message || 'Không thể lưu kết quả trận đấu');
-      }
-      return response.ok;
+      // Bracket data cũng phụ thuộc vào group matches (vd. để qualify SE/DE).
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'bracket-data'],
+      });
+      return true;
     } catch (error) {
-      console.error('Failed to save match result:', error);
-      toast.error('Có lỗi xảy ra khi lưu kết quả');
+      if (error instanceof ApiError) {
+        toast.error(error.message || 'Không thể lưu kết quả trận đấu');
+      } else {
+        console.error('Failed to save match result:', error);
+        toast.error('Có lỗi xảy ra khi lưu kết quả');
+      }
       return false;
     }
   };
@@ -206,26 +218,16 @@ export default function GroupStageBracket({
       const missingPairs = expectedPairs.filter((p) => !findInDb(p));
 
       // Nếu là creator và còn thiếu cặp đấu trong DB → gọi ensure để tạo cho đủ
-      if (missingPairs.length > 0 && !isReadOnly) {
+      if (missingPairs.length > 0 && !isReadOnly && hasSession()) {
         try {
-          const session = localStorage.getItem('authSession');
-          if (session) {
-            const { token } = JSON.parse(session);
-            const res = await fetch(
-              `${API_BASE}/tournaments/${tournamentId}/group-matches/ensure`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ pairs: missingPairs }),
-              }
-            );
-            if (res.ok) {
-              existingMatches = await fetchMatches();
-            }
-          }
+          await apiFetch<{ message?: string }>(
+            `/tournaments/${tournamentId}/group-matches/ensure`,
+            { method: 'POST', body: { pairs: missingPairs } }
+          );
+          queryClient.invalidateQueries({
+            queryKey: ['tournaments', tournamentId, 'group-matches'],
+          });
+          existingMatches = await fetchMatches();
         } catch (err) {
           console.error('Failed to ensure missing matches:', err);
         }
@@ -442,31 +444,16 @@ export default function GroupStageBracket({
   }, [groups]);
 
   const handleScheduleConfirm = async (matchIds: (number | string)[]) => {
+    if (!hasSession()) {
+      toast.error('Bạn cần đăng nhập để lên lịch trận đấu');
+      return;
+    }
     setScheduling(true);
     try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Bạn cần đăng nhập để lên lịch trận đấu');
-        return;
-      }
-      const { token } = JSON.parse(session);
-      const response = await fetch(
-        `${API_BASE}/tournaments/${tournamentId}/group-matches/schedule`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ matchIds }),
-        }
+      await apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/group-matches/schedule`,
+        { method: 'POST', body: { matchIds } }
       );
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        toast.error(err?.message || 'Không thể lên lịch các trận đấu');
-        return;
-      }
 
       const now = new Date().toISOString();
       const matchIdSet = new Set(matchIds.map((x) => String(x)));
@@ -478,11 +465,18 @@ export default function GroupStageBracket({
           ),
         }))
       );
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'group-matches'],
+      });
       toast.success(`Đã lên lịch ${matchIds.length} trận cho hôm nay`);
       setShowScheduleModal(false);
     } catch (error) {
-      console.error('Failed to schedule matches:', error);
-      toast.error('Có lỗi xảy ra khi lên lịch');
+      if (error instanceof ApiError) {
+        toast.error(error.message || 'Không thể lên lịch các trận đấu');
+      } else {
+        console.error('Failed to schedule matches:', error);
+        toast.error('Có lỗi xảy ra khi lên lịch');
+      }
     } finally {
       setScheduling(false);
     }

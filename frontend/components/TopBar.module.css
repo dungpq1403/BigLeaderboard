@@ -89,11 +89,37 @@
 
 /* Search Results Dropdown */
 .searchResults {
-  @apply absolute top-full left-0 right-0 mt-2 rounded-lg shadow-lg max-h-96 overflow-y-auto z-50;
+  @apply absolute top-full left-0 right-0 mt-2 rounded-lg shadow-lg max-h-96 z-50;
   background: linear-gradient(135deg, rgba(120, 53, 15, 0.95) 0%, rgba(69, 26, 3, 0.95) 100%);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(245, 158, 11, 0.6);
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.3), inset 0 0 4px rgba(245, 158, 11, 0.2);
+  /* `overflow-y: auto` chỉ hiện scrollbar khi nội dung vượt max-height.
+     `scrollbar-gutter: stable` reserve trước chỗ cho scrollbar nên hover
+     vào item không gây flicker layout (item dịch ngang khi scrollbar xuất hiện). */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.7) rgba(69, 26, 3, 0.3);
+}
+
+/* WebKit (Chrome/Edge/Safari): scrollbar bo tròn, màu amber khớp theme web */
+.searchResults::-webkit-scrollbar {
+  width: 8px;
+}
+.searchResults::-webkit-scrollbar-track {
+  background: rgba(69, 26, 3, 0.3);
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+.searchResults::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.7) 0%, rgba(180, 83, 9, 0.7) 100%);
+  border-radius: 999px;
+  border: 1px solid rgba(120, 53, 15, 0.5);
+}
+.searchResults::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(252, 211, 77, 0.9) 0%, rgba(245, 158, 11, 0.9) 100%);
 }
 
 .searchResultItem {
@@ -101,13 +127,17 @@
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
   border-bottom: 1px solid rgba(180, 83, 9, 0.3);
+  /* Border trái 0px ở trạng thái thường + transition border-color để khi
+     hover chỉ đổi màu, KHÔNG thay đổi layout → tránh trigger scrollbar
+     xuất hiện/biến mất "vô tội vạ" khi rê chuột qua các card. */
+  border-left: 3px solid transparent;
 }
 
 .searchResultItem:hover {
   background: linear-gradient(135deg, rgba(180, 83, 9, 0.6) 0%, rgba(120, 53, 15, 0.6) 100%);
-  transform: translateY(2px);
+  border-left-color: #fcd34d;
 }
 
 .searchResultItem:last-child {

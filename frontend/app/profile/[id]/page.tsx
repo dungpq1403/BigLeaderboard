@@ -1,13 +1,13 @@
 "use client";
 
 import { notFound, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './page.module.css';
 import TournamentListProfile from '@/components/tournament/TournamentListProfile';
 import EditProfileModal from '@/components/edit/EditProfileModal';
 import GameProfileManager from '@/components/GameProfileManager';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface User {
   id: number;
@@ -46,81 +46,90 @@ interface ProfilePageProps {
 
 export default function ProfilePage({ params }: ProfilePageProps) {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [registeredTournaments, setRegisteredTournaments] = useState<Tournament[]>([]);
-  const [hostedTournaments, setHostedTournaments] = useState<Tournament[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { id: idParam } = use(params);
+  const userId = Number(idParam);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
-  const fetchData = async () => {
-    const { id } = await params;
-    
-    try {
-      // Get current user
-      const session = localStorage.getItem('authSession');
-      if (session) {
-        const { user: currentUser } = JSON.parse(session);
-        setCurrentUserId(currentUser.id);
-      }
-      
-      // Fetch user profile
-      const userResponse = await fetch(`${API_BASE}/users/${id}`);
-      if (!userResponse.ok) {
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-      const userData = await userResponse.json();
-      setUser(userData);
-      
-      // Fetch registered tournaments
-      const registeredRes = await fetch(`${API_BASE}/users/${id}/registered-tournaments`);
-      const registeredData = await registeredRes.json();
-      setRegisteredTournaments(Array.isArray(registeredData) ? registeredData : []);
-      
-      // Fetch hosted tournaments
-      const hostedRes = await fetch(`${API_BASE}/users/${id}/hosted-tournaments`);
-      const hostedData = await hostedRes.json();
-      setHostedTournaments(Array.isArray(hostedData) ? hostedData : []);
-    } catch (error) {
-      console.error('Failed to fetch profile:', error);
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
-  }, [params]);
+    try {
+      const raw = localStorage.getItem('authSession');
+      if (raw) setCurrentUserId(JSON.parse(raw)?.user?.id ?? null);
+    } catch {
+      setCurrentUserId(null);
+    }
+  }, []);
 
+  // 3 queries song song. queryKey ['users', userId] cùng cache với các
+  // component khác (TournamentList user lookup, registration auto-fill...).
+  const {
+    data: user,
+    isLoading: loadingUser,
+    isError: userError,
+  } = useQuery<User | null>({
+    queryKey: ['users', userId],
+    queryFn: async ({ signal }) => {
+      try {
+        return await apiFetch<User>(`/users/${userId}`, { signal, auth: false });
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    enabled: Number.isFinite(userId),
+  });
+
+  const { data: registeredTournaments = [] } = useQuery<Tournament[]>({
+    queryKey: ['users', userId, 'registered-tournaments'],
+    queryFn: ({ signal }) =>
+      apiFetch<Tournament[]>(`/users/${userId}/registered-tournaments`, {
+        signal,
+        auth: false,
+      }),
+    enabled: Number.isFinite(userId),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
+
+  const { data: hostedTournaments = [] } = useQuery<Tournament[]>({
+    queryKey: ['users', userId, 'hosted-tournaments'],
+    queryFn: ({ signal }) =>
+      apiFetch<Tournament[]>(`/users/${userId}/hosted-tournaments`, {
+        signal,
+        auth: false,
+      }),
+    enabled: Number.isFinite(userId),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
+
+  const loading = loadingUser;
+
+  // Sau khi update profile: invalidate cache user và (nếu là profile của
+  // chính mình) cập nhật `authSession` để TopBar đọc lại tên đúng.
   const handleEditSuccess = async () => {
     setIsModalOpen(false);
-    
-    const { id } = await params;
+    const updated = await queryClient.fetchQuery<User>({
+      queryKey: ['users', userId],
+      queryFn: ({ signal }) =>
+        apiFetch<User>(`/users/${userId}`, { signal, auth: false }),
+    });
+
     try {
-      const userResponse = await fetch(`${API_BASE}/users/${id}`);
-      if (userResponse.ok) {
-        const userData = await userResponse.json();
-        setUser(userData);
-        
-        // Update session storage if viewing own profile
-        const session = localStorage.getItem('authSession');
-        if (session && currentUserId === userData.id) {
-          const parsedSession = JSON.parse(session);
-          parsedSession.user = {
-            ...parsedSession.user,
-            fullName: userData.fullName,
-            email: userData.email,
-            country: userData.country,
-          };
-          localStorage.setItem('authSession', JSON.stringify(parsedSession));
-          window.dispatchEvent(new Event('auth-changed'));
-        }
+      const session = localStorage.getItem('authSession');
+      if (session && currentUserId === updated?.id) {
+        const parsed = JSON.parse(session);
+        parsed.user = {
+          ...parsed.user,
+          fullName: updated.fullName,
+          email: updated.email,
+          country: updated.country,
+        };
+        localStorage.setItem('authSession', JSON.stringify(parsed));
+        window.dispatchEvent(new Event('auth-changed'));
       }
-    } catch (error) {
-      console.error('Failed to refresh user data:', error);
+    } catch (err) {
+      console.error('Failed to sync authSession:', err);
     }
   };
 
@@ -135,7 +144,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
     );
   }
 
-  if (!user) {
+  if (!user || userError) {
     notFound();
   }
 

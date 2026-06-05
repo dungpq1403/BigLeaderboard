@@ -10,9 +10,9 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './DoubleEliminationBracket.module.css';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+import { apiFetch, ApiError } from '@/lib/api';
 
 // =====================================================
 // Types
@@ -113,17 +113,17 @@ function deriveWinnerName(
   return null;
 }
 
-// Lấy JWT từ localStorage để gọi API có auth. Trả về null nếu chưa đăng nhập
-// hoặc session đã hỏng (parse fail) → khi đó các thao tác ghi sẽ bị chặn ở UI.
-function getAuthToken(): string | null {
-  if (typeof window === 'undefined') return null;
+// Kiểm tra session tồn tại để guard các action cần auth. apiFetch tự gắn
+// Authorization header nên ta không cần đọc token trực tiếp.
+function hasAuthSession(): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     const raw = localStorage.getItem('authSession');
-    if (!raw) return null;
+    if (!raw) return false;
     const parsed = JSON.parse(raw);
-    return typeof parsed?.token === 'string' ? parsed.token : null;
+    return typeof parsed?.token === 'string';
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -487,10 +487,12 @@ export default function DoubleEliminationBracket({
   formatNames = {},
   startDate,
 }: DoubleEliminationBracketProps) {
+  const queryClient = useQueryClient();
   // State tỉ số + BO cho từng trận (matchId -> MatchScore). Winner được suy ra
   // từ score + bestOf bằng deriveWinnerName, không lưu trực tiếp.
-  // Nguồn dữ liệu chính là DB (table double_elimination_matches), fetch khi
-  // component mount và mỗi lần đổi tournamentId.
+  // Nguồn dữ liệu chính là DB (table double_elimination_matches); ta dùng
+  // useQuery để fetch và mirror sang state local cho các optimistic updates
+  // (xoá downstream khi đổi winner...).
   const [matchScores, setMatchScores] = useState<Record<number, MatchScore>>({});
   const [saving, setSaving] = useState(false);
 
@@ -518,41 +520,33 @@ export default function DoubleEliminationBracket({
     }
   }, [tournamentId]);
 
-  // Fetch tỉ số đã lưu từ DB (thay localStorage). Endpoint là public nên kể cả
-  // khán giả chưa đăng nhập cũng có thể xem được sơ đồ với tỉ số mới nhất.
+  // Fetch tỉ số đã lưu từ DB qua useQuery (endpoint public, auth: false).
+  const { data: scoresData } = useQuery<{ matches?: Array<Record<string, unknown>> }>({
+    queryKey: ['tournaments', tournamentId, 'double-elim-matches'],
+    queryFn: ({ signal }) =>
+      apiFetch<{ matches?: Array<Record<string, unknown>> }>(
+        `/tournaments/${tournamentId}/double-elim-matches`,
+        { signal, auth: false }
+      ),
+  });
+
+  // Mirror scoresData → matchScores. setState chỉ chạy khi data đổi tham
+  // chiếu, giúp các optimistic updates tiếp tục dùng setMatchScores như cũ.
   useEffect(() => {
-    let cancelled = false;
-    async function loadScores() {
-      try {
-        const response = await fetch(
-          `${API_BASE}/tournaments/${tournamentId}/double-elim-matches`,
-        );
-        if (!response.ok) return;
-        const data = await response.json();
-        if (cancelled) return;
-        const next: Record<number, MatchScore> = {};
-        const rows: Array<Record<string, unknown>> = Array.isArray(data?.matches)
-          ? data.matches
-          : [];
-        rows.forEach((row) => {
-          const mid = Number(row?.matchId);
-          if (!Number.isFinite(mid)) return;
-          next[mid] = {
-            teamA: Number(row?.teamAScore) || 0,
-            teamB: Number(row?.teamBScore) || 0,
-            bestOf: Number(row?.bestOf) || bestOf,
-          };
-        });
-        setMatchScores(next);
-      } catch {
-        // Lỗi mạng → giữ state rỗng, không chặn UI; user vẫn xem được bracket trống
-      }
-    }
-    loadScores();
-    return () => {
-      cancelled = true;
-    };
-  }, [tournamentId, bestOf]);
+    if (!scoresData) return;
+    const rows = Array.isArray(scoresData.matches) ? scoresData.matches : [];
+    const next: Record<number, MatchScore> = {};
+    rows.forEach((row) => {
+      const mid = Number(row?.matchId);
+      if (!Number.isFinite(mid)) return;
+      next[mid] = {
+        teamA: Number(row?.teamAScore) || 0,
+        teamB: Number(row?.teamBScore) || 0,
+        bestOf: Number(row?.bestOf) || bestOf,
+      };
+    });
+    setMatchScores(next);
+  }, [scoresData, bestOf]);
 
   // Giải đấu đã đến ngày bắt đầu hay chưa (so sánh theo ngày, bỏ qua giờ).
   // Trước startDate, người dùng KHÔNG được chấm winner — đồng bộ với các thể thức khác.
@@ -819,8 +813,7 @@ export default function DoubleEliminationBracket({
       return;
     }
 
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasAuthSession()) {
       toast.error('Bạn cần đăng nhập để lưu kết quả.');
       return;
     }
@@ -845,15 +838,11 @@ export default function DoubleEliminationBracket({
 
     setSaving(true);
     try {
-      const response = await fetch(
-        `${API_BASE}/tournaments/${tournamentId}/double-elim-matches/${editingMatchId}`,
+      await apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/double-elim-matches/${editingMatchId}`,
         {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
+          body: {
             teamAScore: formTeamA,
             teamBScore: formTeamB,
             bestOf: formBestOf,
@@ -861,21 +850,9 @@ export default function DoubleEliminationBracket({
             teamBName: tree.team2.name || null,
             bracket: def?.bracket || null,
             invalidateMatchIds,
-          }),
+          },
         },
       );
-
-      if (!response.ok) {
-        let msg = 'Lưu kết quả thất bại.';
-        try {
-          const err = await response.json();
-          if (err?.message) msg = err.message;
-        } catch {
-          // ignore parse error
-        }
-        toast.error(msg);
-        return;
-      }
 
       setMatchScores((prev) => {
         const next = { ...prev, [editingMatchId]: newScore };
@@ -886,8 +863,15 @@ export default function DoubleEliminationBracket({
       });
       setEditingMatchId(null);
       toast.success('Đã lưu kết quả trận đấu.');
-    } catch {
-      toast.error('Có lỗi mạng khi lưu kết quả.');
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'double-elim-matches'],
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.message || 'Lưu kết quả thất bại.');
+      } else {
+        toast.error('Có lỗi mạng khi lưu kết quả.');
+      }
     } finally {
       setSaving(false);
     }
@@ -901,13 +885,13 @@ export default function DoubleEliminationBracket({
     collectDownstream,
     matchDefs,
     tournamentId,
+    queryClient,
   ]);
 
   const clearMatchScore = useCallback(async () => {
     if (editingMatchId === null) return;
 
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasAuthSession()) {
       toast.error('Bạn cần đăng nhập để xoá kết quả.');
       return;
     }
@@ -916,29 +900,13 @@ export default function DoubleEliminationBracket({
 
     setSaving(true);
     try {
-      const response = await fetch(
-        `${API_BASE}/tournaments/${tournamentId}/double-elim-matches/${editingMatchId}`,
+      await apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/double-elim-matches/${editingMatchId}`,
         {
           method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ invalidateMatchIds }),
+          body: { invalidateMatchIds },
         },
       );
-
-      if (!response.ok) {
-        let msg = 'Xoá kết quả thất bại.';
-        try {
-          const err = await response.json();
-          if (err?.message) msg = err.message;
-        } catch {
-          // ignore
-        }
-        toast.error(msg);
-        return;
-      }
 
       setMatchScores((prev) => {
         const next = { ...prev };
@@ -948,12 +916,19 @@ export default function DoubleEliminationBracket({
       });
       setEditingMatchId(null);
       toast.success('Đã xoá kết quả trận đấu.');
-    } catch {
-      toast.error('Có lỗi mạng khi xoá kết quả.');
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'double-elim-matches'],
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.message || 'Xoá kết quả thất bại.');
+      } else {
+        toast.error('Có lỗi mạng khi xoá kết quả.');
+      }
     } finally {
       setSaving(false);
     }
-  }, [editingMatchId, collectDownstream, tournamentId]);
+  }, [editingMatchId, collectDownstream, tournamentId, queryClient]);
 
   // Tìm các root của từng nhánh để vẽ.
   const wbFinal = useMemo(() => {

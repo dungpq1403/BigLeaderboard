@@ -3,9 +3,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './SingleEliminationBracket.module.css';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+import { apiFetch, ApiError } from '@/lib/api';
 
 // =====================================================
 // Types
@@ -77,17 +77,17 @@ interface SingleEliminationBracketProps {
 
 const BYE_LABEL = 'BYE';
 
-// Lấy JWT từ localStorage để gọi API có auth. Chỉ trả về null nếu chưa đăng nhập
-// hoặc session đã hỏng (parse fail) → caller có thể fall back vào read-only mode.
-function getAuthToken(): string | null {
-  if (typeof window === 'undefined') return null;
+// Kiểm tra session tồn tại để guard các action cần auth. apiFetch tự gắn
+// Authorization header nên ta không cần đọc token ở đây nữa.
+function hasAuthSession(): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     const raw = localStorage.getItem('authSession');
-    if (!raw) return null;
+    if (!raw) return false;
     const parsed = JSON.parse(raw);
-    return typeof parsed?.token === 'string' ? parsed.token : null;
+    return typeof parsed?.token === 'string';
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -360,7 +360,10 @@ export default function SingleEliminationBracket({
   formatNames = {},
   startDate,
 }: SingleEliminationBracketProps) {
+  const queryClient = useQueryClient();
   // Tỉ số + BO cho từng trận (key = matchId), nguồn dữ liệu chính là DB.
+  // Cache trong React Query, mirror sang state để các logic cũ chỉnh sửa
+  // optimistic (delete downstream...) vẫn hoạt động không thay đổi.
   const [matchScores, setMatchScores] = useState<Record<number, MatchScore>>({});
   const [saving, setSaving] = useState(false);
 
@@ -376,39 +379,35 @@ export default function SingleEliminationBracket({
     return () => setModalMounted(false);
   }, []);
 
-  // Fetch tỉ số đã lưu từ DB (thay localStorage). Endpoint là public nên kể cả
-  // khán giả chưa đăng nhập cũng có thể xem được sơ đồ với tỉ số mới nhất.
+  // Query tỉ số đã lưu từ DB. Endpoint public → auth: false. Cache theo
+  // tournamentId; mutations sẽ invalidate sau khi save/delete.
+  const { data: scoresData } = useQuery<{ matches?: any[] }>({
+    queryKey: ['tournaments', tournamentId, 'single-elim-matches'],
+    queryFn: ({ signal }) =>
+      apiFetch<{ matches?: any[] }>(
+        `/tournaments/${tournamentId}/single-elim-matches`,
+        { signal, auth: false }
+      ),
+  });
+
+  // Mirror scoresData (server state) sang matchScores (local state) để các
+  // optimistic updates (xoá downstream khi đổi winner...) vẫn dùng setState
+  // được như cũ. Effect chỉ chạy khi data đổi tham chiếu (do refetch).
   useEffect(() => {
-    let cancelled = false;
-    async function loadScores() {
-      try {
-        const response = await fetch(
-          `${API_BASE}/tournaments/${tournamentId}/single-elim-matches`,
-        );
-        if (!response.ok) return;
-        const data = await response.json();
-        if (cancelled) return;
-        const next: Record<number, MatchScore> = {};
-        const rows: any[] = Array.isArray(data?.matches) ? data.matches : [];
-        rows.forEach((row) => {
-          const mid = Number(row?.matchId);
-          if (!Number.isFinite(mid)) return;
-          next[mid] = {
-            teamA: Number(row?.teamAScore) || 0,
-            teamB: Number(row?.teamBScore) || 0,
-            bestOf: Number(row?.bestOf) || bestOf,
-          };
-        });
-        setMatchScores(next);
-      } catch {
-        // Lỗi mạng → giữ state rỗng, không chặn UI
-      }
-    }
-    loadScores();
-    return () => {
-      cancelled = true;
-    };
-  }, [tournamentId, bestOf]);
+    if (!scoresData) return;
+    const next: Record<number, MatchScore> = {};
+    const rows: any[] = Array.isArray(scoresData.matches) ? scoresData.matches : [];
+    rows.forEach((row) => {
+      const mid = Number(row?.matchId);
+      if (!Number.isFinite(mid)) return;
+      next[mid] = {
+        teamA: Number(row?.teamAScore) || 0,
+        teamB: Number(row?.teamBScore) || 0,
+        bestOf: Number(row?.bestOf) || bestOf,
+      };
+    });
+    setMatchScores(next);
+  }, [scoresData, bestOf]);
 
   // Giải đấu đã đến ngày bắt đầu hay chưa (so sánh theo ngày, bỏ qua giờ).
   // Khi chưa đến ngày bắt đầu, người dùng KHÔNG được nhập/sửa tỉ số — đồng bộ
@@ -664,8 +663,7 @@ export default function SingleEliminationBracket({
       return;
     }
 
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasAuthSession()) {
       toast.error('Bạn cần đăng nhập để lưu kết quả.');
       return;
     }
@@ -688,15 +686,11 @@ export default function SingleEliminationBracket({
 
     setSaving(true);
     try {
-      const response = await fetch(
-        `${API_BASE}/tournaments/${tournamentId}/single-elim-matches/${editingMatchId}`,
+      await apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/single-elim-matches/${editingMatchId}`,
         {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
+          body: {
             teamAScore: formTeamA,
             teamBScore: formTeamB,
             bestOf: formBestOf,
@@ -704,21 +698,9 @@ export default function SingleEliminationBracket({
             teamBName: tree.team2.name || null,
             isThirdPlace: !!def?.isThirdPlace,
             invalidateMatchIds,
-          }),
+          },
         },
       );
-
-      if (!response.ok) {
-        let msg = 'Lưu kết quả thất bại.';
-        try {
-          const err = await response.json();
-          if (err?.message) msg = err.message;
-        } catch {
-          // ignore parse error
-        }
-        toast.error(msg);
-        return;
-      }
 
       setMatchScores((prev) => {
         const next = { ...prev, [editingMatchId]: newScore };
@@ -729,8 +711,16 @@ export default function SingleEliminationBracket({
       });
       setEditingMatchId(null);
       toast.success('Đã lưu kết quả trận đấu.');
+      // Đồng bộ lại với DB ngầm sau optimistic update.
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'single-elim-matches'],
+      });
     } catch (error) {
-      toast.error('Có lỗi mạng khi lưu kết quả.');
+      if (error instanceof ApiError) {
+        toast.error(error.message || 'Lưu kết quả thất bại.');
+      } else {
+        toast.error('Có lỗi mạng khi lưu kết quả.');
+      }
     } finally {
       setSaving(false);
     }
@@ -744,13 +734,13 @@ export default function SingleEliminationBracket({
     collectDownstream,
     matchDefs,
     tournamentId,
+    queryClient,
   ]);
 
   const clearMatchScore = useCallback(async () => {
     if (editingMatchId === null) return;
 
-    const token = getAuthToken();
-    if (!token) {
+    if (!hasAuthSession()) {
       toast.error('Bạn cần đăng nhập để xoá kết quả.');
       return;
     }
@@ -759,29 +749,13 @@ export default function SingleEliminationBracket({
 
     setSaving(true);
     try {
-      const response = await fetch(
-        `${API_BASE}/tournaments/${tournamentId}/single-elim-matches/${editingMatchId}`,
+      await apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/single-elim-matches/${editingMatchId}`,
         {
           method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ invalidateMatchIds }),
+          body: { invalidateMatchIds },
         },
       );
-
-      if (!response.ok) {
-        let msg = 'Xoá kết quả thất bại.';
-        try {
-          const err = await response.json();
-          if (err?.message) msg = err.message;
-        } catch {
-          // ignore
-        }
-        toast.error(msg);
-        return;
-      }
 
       setMatchScores((prev) => {
         const next = { ...prev };
@@ -791,12 +765,19 @@ export default function SingleEliminationBracket({
       });
       setEditingMatchId(null);
       toast.success('Đã xoá kết quả trận đấu.');
+      queryClient.invalidateQueries({
+        queryKey: ['tournaments', tournamentId, 'single-elim-matches'],
+      });
     } catch (error) {
-      toast.error('Có lỗi mạng khi xoá kết quả.');
+      if (error instanceof ApiError) {
+        toast.error(error.message || 'Xoá kết quả thất bại.');
+      } else {
+        toast.error('Có lỗi mạng khi xoá kết quả.');
+      }
     } finally {
       setSaving(false);
     }
-  }, [editingMatchId, collectDownstream, tournamentId]);
+  }, [editingMatchId, collectDownstream, tournamentId, queryClient]);
 
   // Root matches = các trận thuộc vòng cuối (không tính trận tranh hạng 3)
   const rootMatches = useMemo(() => {

@@ -1,83 +1,112 @@
 // app/tournaments/[id]/edit/page.tsx
 "use client";
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { useQuery } from '@tanstack/react-query';
 import EditTournamentForm from '@/components/edit/EditTournamentForm';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch } from '@/lib/api';
 
 interface EditTournamentPageProps {
   params: Promise<{ id: string }>;
 }
 
+type TournamentDetail = {
+  id: number;
+  gameId: number;
+  name: string;
+  formats: string[];
+  startDate: string;
+  endDate: string;
+  maxParticipants: number;
+  participantType: string;
+  prize: number;
+  description?: string;
+  imageUrl?: string;
+  createdBy: number;
+  advancementSteps?: number[] | null;
+  groupColumns?: unknown[] | null;
+  teamMembers?: number | null;
+  teamSubstitutes?: number | null;
+  thirdPlaceMatch?: boolean;
+};
+
+type Contact = { platform: string; contact: string };
+type RoundBO = { roundNumber: number; formatType: string; bestOf: number };
+
 export default function EditTournamentPage({ params }: EditTournamentPageProps) {
   const router = useRouter();
-  const [tournament, setTournament] = useState<any>(null);
-  const [contacts, setContacts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isCreator, setIsCreator] = useState(false);
-  const [roundBestOf, setRoundBestOf] = useState<any[]>([])
+  const { id: idParam } = use(params);
+  const tournamentId = Number(idParam);
 
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Auth gate giống các trang protected khác. Chưa login → /login.
   useEffect(() => {
-    const fetchData = async () => {
-      const { id } = await params;
-      
-      try {
-        const session = localStorage.getItem('authSession');
-        if (!session) {
-          toast.error('Vui lòng đăng nhập');
-          router.push('/login');
-          return;
-        }
-        
-        const { user, token } = JSON.parse(session);
-        
-        // Fetch tournament details
-        const tournamentRes = await fetch(`${API_BASE}/tournaments/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        
-        if (!tournamentRes.ok) {
-          toast.error('Không tìm thấy giải đấu');
-          router.push('/');
-          return;
-        }
-        
-        const tournamentData = await tournamentRes.json();
-        
-        // Check if user is creator
-        if (tournamentData.createdBy !== user.id) {
-          toast.error('Bạn không có quyền chỉnh sửa giải đấu này');
-          router.push(`/tournaments/${id}`);
-          return;
-        }
-        
-        setTournament(tournamentData);
-        setIsCreator(true);
-        
-        // Fetch contacts
-        const contactsRes = await fetch(`${API_BASE}/tournaments/${id}/contacts`);
-        const contactsData = await contactsRes.json();
-        setContacts(Array.isArray(contactsData) ? contactsData : []);
-
-        //fetch roundBestOfs
-        const roundBORes = await fetch(`${API_BASE}/tournaments/${id}/round-best-of`);
-        const roundBOData = await roundBORes.json();
-        setRoundBestOf(Array.isArray(roundBOData) ? roundBOData : []);
-        
-      } catch (error) {
-        console.error('Failed to fetch tournament:', error);
-        toast.error('Có lỗi xảy ra');
-        router.push('/');
-      } finally {
-        setLoading(false);
+    try {
+      const raw = localStorage.getItem('authSession');
+      if (!raw) {
+        toast.error('Vui lòng đăng nhập');
+        router.push('/login');
+        return;
       }
-    };
-    
-    fetchData();
-  }, [params, router]);
+      setCurrentUserId(JSON.parse(raw)?.user?.id ?? null);
+    } catch {
+      router.push('/login');
+      return;
+    }
+    setAuthChecked(true);
+  }, [router]);
+
+  const {
+    data: tournament,
+    isError,
+    isLoading,
+  } = useQuery<TournamentDetail | null>({
+    queryKey: ['tournaments', tournamentId],
+    queryFn: ({ signal }) =>
+      apiFetch<TournamentDetail>(`/tournaments/${tournamentId}`, { signal }),
+    enabled: authChecked && Number.isFinite(tournamentId),
+  });
+
+  const { data: contacts = [] } = useQuery<Contact[]>({
+    queryKey: ['tournaments', tournamentId, 'contacts'],
+    queryFn: ({ signal }) =>
+      apiFetch<Contact[]>(`/tournaments/${tournamentId}/contacts`, { signal, auth: false }),
+    enabled: authChecked && Number.isFinite(tournamentId),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
+
+  const { data: roundBestOf = [] } = useQuery<RoundBO[]>({
+    queryKey: ['tournaments', tournamentId, 'round-best-of'],
+    queryFn: ({ signal }) =>
+      apiFetch<RoundBO[]>(`/tournaments/${tournamentId}/round-best-of`, {
+        signal,
+        auth: false,
+      }),
+    enabled: authChecked && Number.isFinite(tournamentId),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
+
+  // Side-effect: chuyển hướng khi không phải creator hoặc tournament 404.
+  // Tách ra effect để giữ render purity.
+  const isCreator = !!(tournament && currentUserId && tournament.createdBy === currentUserId);
+  useEffect(() => {
+    if (!authChecked) return;
+    if (isError) {
+      toast.error('Không tìm thấy giải đấu');
+      router.push('/');
+      return;
+    }
+    if (tournament && currentUserId && !isCreator) {
+      toast.error('Bạn không có quyền chỉnh sửa giải đấu này');
+      router.push(`/tournaments/${tournamentId}`);
+    }
+  }, [authChecked, isError, tournament, currentUserId, isCreator, router, tournamentId]);
+
+  const loading = !authChecked || isLoading;
 
   if (loading) {
     return (

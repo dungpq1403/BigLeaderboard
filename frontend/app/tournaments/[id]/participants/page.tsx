@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import styles from './page.module.css';
 import BackButton from '@/components/button/BackButton';
 import TeamDetails from '@/components/team/TeamDetails';
 import Link from 'next/link';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch } from '@/lib/api';
 
 interface Participant {
   id: number;
@@ -52,54 +52,69 @@ interface ParticipantsPageProps {
   params: Promise<{ id: string }>;
 }
 
+type TournamentWithCreator = Tournament & { createdBy: number };
+
 export default function ParticipantsPage({ params }: ParticipantsPageProps) {
   const router = useRouter();
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [tournament, setTournament] = useState<Tournament | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isCreator, setIsCreator] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const { id: idParam } = use(params);
+  const tournamentId = Number(idParam);
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Đọc session một lần. Nếu chưa đăng nhập → redirect login. Tách logic
+  // auth check ra effect riêng để useQuery dưới đây chỉ chạy khi đã có user.
   useEffect(() => {
-    const fetchData = async () => {
-      const { id } = await params;
-      
-      try {
-        const session = localStorage.getItem('authSession');
-        if (!session) {
-          router.push('/login');
-          return;
-        }
-        
-        const { user, token } = JSON.parse(session);
-        
-        // Fetch tournament details
-        const tournamentRes = await fetch(`${API_BASE}/tournaments/${id}`);
-        const tournamentData = await tournamentRes.json();
-        setTournament(tournamentData);
-        
-        // Check if user is creator
-        if (tournamentData.createdBy !== user.id) {
-          router.push(`/tournaments/${id}`);
-          return;
-        }
-        setIsCreator(true);
-        
-        // Fetch participants
-        const participantsRes = await fetch(`${API_BASE}/tournaments/${id}/participants`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const participantsData = await participantsRes.json();
-        setParticipants(Array.isArray(participantsData) ? participantsData : []);
-      } catch (error) {
-        console.error('Failed to fetch participants:', error);
-      } finally {
-        setLoading(false);
+    try {
+      const raw = localStorage.getItem('authSession');
+      if (!raw) {
+        router.push('/login');
+        return;
       }
-    };
-    
-    fetchData();
-  }, [params, router]);
+      const parsed = JSON.parse(raw);
+      setCurrentUserId(parsed?.user?.id ?? null);
+    } catch {
+      router.push('/login');
+      return;
+    }
+    setAuthChecked(true);
+  }, [router]);
+
+  // Tournament: cache cùng key với trang detail nên không phải fetch lại
+  // nếu user vừa từ trang chi tiết qua.
+  const { data: tournament } = useQuery<TournamentWithCreator | null>({
+    queryKey: ['tournaments', tournamentId],
+    queryFn: ({ signal }) =>
+      apiFetch<TournamentWithCreator>(`/tournaments/${tournamentId}`, {
+        signal,
+        auth: false,
+      }),
+    enabled: authChecked && Number.isFinite(tournamentId),
+  });
+
+  const isCreator = !!(tournament && currentUserId && tournament.createdBy === currentUserId);
+
+  // Khi xác định không phải creator → redirect. Dùng effect riêng để side
+  // effect (navigation) không nằm trong render.
+  useEffect(() => {
+    if (tournament && currentUserId && !isCreator) {
+      router.push(`/tournaments/${tournamentId}`);
+    }
+  }, [tournament, currentUserId, isCreator, router, tournamentId]);
+
+  // Participants: chỉ fetch khi đã chắc chắn user là creator (auth required).
+  const { data: participants = [], isLoading: loadingParticipants } = useQuery<
+    Participant[]
+  >({
+    queryKey: ['tournaments', tournamentId, 'participants'],
+    queryFn: ({ signal }) =>
+      apiFetch<Participant[]>(`/tournaments/${tournamentId}/participants`, { signal }),
+    enabled: authChecked && isCreator,
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
+
+  const loading = !authChecked || !tournament || loadingParticipants;
 
   const filteredParticipants = participants.filter(p => {
     if (!searchTerm) return true;

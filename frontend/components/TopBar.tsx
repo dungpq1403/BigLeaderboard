@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState, useRef, FormEvent } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import styles from "./TopBar.module.css";
 import TournamentCreator from "./tournament/TournamentCreator";
 import { useFormat } from "@/context/FormatContext";
 import Image from 'next/image';
+import { apiFetch, ApiError } from "@/lib/api";
 
 // Khoảng debounce (ms) trước khi gọi API gợi ý.
 // Đủ ngắn để cảm giác "live", đủ dài để không spam request khi user gõ nhanh.
@@ -43,20 +45,19 @@ type TournamentSearchResult = {
   } | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
 export default function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const urlSearchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const { getFormatName, getFormatIcon } = useFormat();
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<TournamentSearchResult[]>([]);
+  // `debouncedQuery` được set sau SEARCH_DEBOUNCE_MS để Query chỉ refetch
+  // khi user thật sự dừng gõ, thay vì spam mỗi keystroke. Cache theo
+  // debouncedQuery nên gõ lại từ khóa cũ là ăn cache (instant).
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [searching, setSearching] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   // Phân biệt giữa "user gõ tay" và "input bị set từ URL sync".
@@ -75,65 +76,60 @@ export default function TopBar() {
     setSearchQuery('');
   }, [pathname, urlSearchParams]);
 
-  useEffect(() => {
-    const verifyToken = async () => {
-      setIsCheckingAuth(true);
-      
-      const rawSession = localStorage.getItem("authSession");
-      if (!rawSession) {
-        setUser(null);
-        setIsCheckingAuth(false);
-        return;
+  // Auth state — verify token với BE. Bao bọc trong useQuery để:
+  //  - Tự cache trong cùng tab (refetch chỉ khi invalidate hoặc 'auth-changed').
+  //  - Auto-retry 0 (token invalid là chuyện thường, retry chỉ thêm noise).
+  //  - Khi 401 (token hết hạn / sai) → clear localStorage trong onError-like
+  //    branch (qua throwOnError + catch ngay trong queryFn để vẫn return null).
+  const { data: user, isLoading: isCheckingAuth } = useQuery<AuthUser | null>({
+    queryKey: ["auth", "verify"],
+    queryFn: async ({ signal }) => {
+      const rawSession =
+        typeof window !== "undefined" ? localStorage.getItem("authSession") : null;
+      if (!rawSession) return null;
+
+      let token: string | undefined;
+      try {
+        token = JSON.parse(rawSession)?.token;
+      } catch {
+        localStorage.removeItem("authSession");
+        return null;
+      }
+      if (!token) {
+        localStorage.removeItem("authSession");
+        return null;
       }
 
       try {
-        const session = JSON.parse(rawSession);
-        const token = session?.token;
-
-        if (!token) {
+        const data = await apiFetch<{ user?: AuthUser }>("/verify-token", { signal });
+        return data?.user ?? null;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          // Token sai/hết hạn → xóa session.
           localStorage.removeItem("authSession");
-          setUser(null);
-          setIsCheckingAuth(false);
-          return;
+          return null;
         }
-
-        const response = await fetch(`${API_BASE}/verify-token`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          localStorage.removeItem("authSession");
-          setUser(null);
-          setIsCheckingAuth(false);
-          return;
-        }
-
-        const data = await response.json();
-        setUser(data.user || null);
-      } catch {
-        localStorage.removeItem("authSession");
-        setUser(null);
-      } finally {
-        setIsCheckingAuth(false);
+        throw err;
       }
-    };
+    },
+    retry: 0,
+    staleTime: 5 * 60_000,
+  });
 
-    verifyToken();
-
+  // Đồng bộ login/logout giữa các tab + giữa các component thông qua các sự
+  // kiện 'auth-changed' (cùng tab) và 'storage' (khác tab). Chỉ invalidate
+  // query thay vì gọi verifyToken thủ công.
+  useEffect(() => {
     const handleAuthChanged = () => {
-      verifyToken();
+      queryClient.invalidateQueries({ queryKey: ["auth", "verify"] });
     };
-
     window.addEventListener("auth-changed", handleAuthChanged);
     window.addEventListener("storage", handleAuthChanged);
-
     return () => {
       window.removeEventListener("auth-changed", handleAuthChanged);
       window.removeEventListener("storage", handleAuthChanged);
     };
-  }, []);
+  }, [queryClient]);
 
   // Click outside để đóng dropdown
   useEffect(() => {
@@ -149,50 +145,41 @@ export default function TopBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Tìm kiếm giải đấu từ API.
-  // - Debounce SEARCH_DEBOUNCE_MS để tránh gọi API mỗi keystroke.
-  // - AbortController để hủy request cũ khi user gõ tiếp, tránh race-condition
-  //   khiến kết quả của query cũ override kết quả của query mới.
-  // - Chỉ chạy khi user thực sự gõ (không chạy khi input bị sync từ URL).
+  // Debounce: chỉ cập nhật debouncedQuery sau khi user dừng gõ
+  // SEARCH_DEBOUNCE_MS. TanStack Query sẽ tự cancel request cũ khi
+  // debouncedQuery (queryKey) đổi → tránh race-condition.
   useEffect(() => {
     if (!userTypedRef.current) return;
-
     const trimmed = searchQuery.trim();
+
     if (trimmed === "") {
-      setSearchResults([]);
+      setDebouncedQuery("");
       setShowSearchResults(false);
-      setSearching(false);
       return;
     }
 
-    const controller = new AbortController();
-
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const response = await fetch(
-          `${API_BASE}/tournaments/search?q=${encodeURIComponent(trimmed)}`,
-          { signal: controller.signal }
-        );
-        const data = await response.json();
-        setSearchResults(Array.isArray(data) ? data : []);
-        setShowSearchResults(true);
-      } catch (error) {
-        // Bỏ qua AbortError vì đó là tự ta hủy request, không phải lỗi thật
-        if ((error as Error)?.name !== "AbortError") {
-          console.error("Search failed:", error);
-          setSearchResults([]);
-        }
-      } finally {
-        setSearching(false);
-      }
+    const timer = setTimeout(() => {
+      setDebouncedQuery(trimmed);
+      setShowSearchResults(true);
     }, SEARCH_DEBOUNCE_MS);
 
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
+    return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  const { data: searchResults = [], isFetching: searching } = useQuery<
+    TournamentSearchResult[]
+  >({
+    queryKey: ["tournaments", "search", debouncedQuery, { dropdown: true }],
+    enabled: debouncedQuery.length > 0,
+    queryFn: ({ signal }) =>
+      apiFetch<TournamentSearchResult[]>(
+        `/tournaments/search?q=${encodeURIComponent(debouncedQuery)}`,
+        { signal, auth: false }
+      ),
+    select: (data) => (Array.isArray(data) ? data : []),
+    // Dropdown gợi ý hay được mở lại với cùng từ khóa, cache 1 phút là vừa.
+    staleTime: 60_000,
+  });
 
   // Enter trên thanh search → điều hướng tới trang kết quả /search?q=...
   // thay vì auto-nhảy vào kết quả đầu (gây hành vi khó đoán cho user).

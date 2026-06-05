@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './GameProfileManager.module.css';
 import GenshinProfileDisplay from './GenshinProfileDisplay';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch } from '@/lib/api';
 
 interface Game {
   id: number;
@@ -31,13 +31,9 @@ interface GameProfileManagerProps {
 }
 
 export default function GameProfileManager({ userId, isOwnProfile }: GameProfileManagerProps) {
-  const [games, setGames] = useState<Game[]>([]);
-  const [profiles, setProfiles] = useState<GameProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [addingGame, setAddingGame] = useState<number | null>(null);
   const [uidInput, setUidInput] = useState('');
-  const [syncing, setSyncing] = useState<number | null>(null);
-  const [deletingGameId, setDeletingGameId] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ gameId: number; gameName: string } | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -48,147 +44,109 @@ export default function GameProfileManager({ userId, isOwnProfile }: GameProfile
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [userId]);
-
-  useEffect(() => {
     if (!showDeleteConfirm) return;
-
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-
     return () => {
       document.body.style.overflow = originalOverflow;
     };
   }, [showDeleteConfirm]);
 
-  const fetchData = async () => {
-    try {
-      const session = localStorage.getItem('authSession');
-      const token = session ? JSON.parse(session).token : null;
-      
-      const headers: HeadersInit = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-      
-      // Fetch games (luôn lấy danh sách game)
-      const gamesRes = await fetch(`${API_BASE}/games`);
-      const gamesData = await gamesRes.json();
-      setGames(Array.isArray(gamesData) ? gamesData : []);
-      
-      // Fetch user's game profiles (cần token để xem profile người khác? API không cần auth)
-      const profilesRes = await fetch(`${API_BASE}/users/${userId}/game-profiles`, { headers });
-      const profilesData = await profilesRes.json();
-      setProfiles(Array.isArray(profilesData) ? profilesData : []);
-    } catch (error) {
-      console.error('Failed to fetch data:', error);
-      toast.error('Không thể tải dữ liệu');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Cache games list dùng chung với home page (queryKey ['games', 'list']).
+  const { data: games = [] } = useQuery<Game[]>({
+    queryKey: ['games', 'list'],
+    queryFn: ({ signal }) => apiFetch<Game[]>(`/games`, { signal, auth: false }),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
 
-  const handleAddProfile = async (gameId: number) => {
-    setLoading(true);
+  // Profiles của user. Cache theo userId nên tab profile khác user là cache riêng.
+  // API có thể nhận token (xem profile riêng tư?), apiFetch tự gắn nếu có session.
+  const { data: profiles = [], isLoading: loadingProfiles } = useQuery<GameProfile[]>({
+    queryKey: ['users', userId, 'game-profiles'],
+    queryFn: ({ signal }) =>
+      apiFetch<GameProfile[]>(`/users/${userId}/game-profiles`, { signal }),
+    select: (d) => (Array.isArray(d) ? d : []),
+  });
+
+  const loading = loadingProfiles;
+
+  // Invalidate helper — gọi sau mỗi mutation thành công.
+  const invalidateProfiles = () =>
+    queryClient.invalidateQueries({ queryKey: ['users', userId, 'game-profiles'] });
+
+  const addMutation = useMutation({
+    mutationFn: ({ gameId, uid }: { gameId: number; uid: string }) =>
+      apiFetch<{ message?: string }>(`/users/${userId}/game-profiles`, {
+        method: 'POST',
+        body: { gameId, uid },
+      }),
+    onSuccess: () => {
+      toast.success('Đã thêm profile game');
+      setUidInput('');
+      setAddingGame(null);
+      invalidateProfiles();
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : 'Thêm thất bại';
+      toast.error(msg);
+    },
+  });
+
+  const handleAddProfile = (gameId: number) => {
     if (!uidInput.trim()) {
       toast.error('Vui lòng nhập UID');
       return;
     }
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) return;
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/users/${userId}/game-profiles`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ gameId, uid: uidInput }),
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        toast.error(data.message || 'Thêm thất bại');
-        return;
-      }
-      
-      toast.success('Đã thêm profile game');
-      setUidInput('');
-      setAddingGame(null);
-      fetchData();
-    } catch (error) {
-      toast.error('Không thể kết nối server');
-    } finally {
-      setLoading(false);
-    }
+    addMutation.mutate({ gameId, uid: uidInput });
   };
 
-  const handleSync = async (gameId: number) => {
-    setSyncing(gameId);
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) return;
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/users/${userId}/game-profiles/${gameId}/sync`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      if (!response.ok) {
-        toast.error('Đồng bộ thất bại');
-        return;
-      }
-      
+  const syncMutation = useMutation({
+    mutationFn: (gameId: number) =>
+      apiFetch<{ message?: string }>(
+        `/users/${userId}/game-profiles/${gameId}/sync`,
+        { method: 'POST' }
+      ),
+    onSuccess: () => {
       toast.success('Đồng bộ thành công');
-      fetchData();
-    } catch (error) {
-      toast.error('Không thể kết nối server');
-    } finally {
-      setSyncing(null);
-    }
-  };
+      invalidateProfiles();
+    },
+    onError: () => {
+      toast.error('Đồng bộ thất bại');
+    },
+  });
+
+  const handleSync = (gameId: number) => syncMutation.mutate(gameId);
+  // syncing chính là gameId đang được sync (suy từ mutation.variables) — Type
+  // assertion vì variables có thể là undefined.
+  const syncingGameId = syncMutation.isPending ? (syncMutation.variables as number | undefined) : null;
+
+  const deleteMutation = useMutation({
+    mutationFn: (gameId: number) =>
+      apiFetch<{ message?: string }>(`/users/${userId}/game-profiles/${gameId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      toast.success('Đã xóa profile game');
+      invalidateProfiles();
+      setShowDeleteConfirm(false);
+      setDeleteTarget(null);
+    },
+    onError: () => {
+      toast.error('Xóa thất bại');
+    },
+  });
+  const deletingGameId = deleteMutation.isPending
+    ? (deleteMutation.variables as number | undefined)
+    : null;
 
   const handleDeleteClick = (gameId: number, gameName: string) => {
     setDeleteTarget({ gameId, gameName });
     setShowDeleteConfirm(true);
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (!deleteTarget) return;
-    
-    setDeletingGameId(deleteTarget.gameId);
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) return;
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/users/${userId}/game-profiles/${deleteTarget.gameId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      if (!response.ok) {
-        toast.error('Xóa thất bại');
-        return;
-      }
-      
-      toast.success('Đã xóa profile game');
-      fetchData();
-    } catch (error) {
-      toast.error('Không thể kết nối server');
-    } finally {
-      setDeletingGameId(null);
-      setShowDeleteConfirm(false);
-      setDeleteTarget(null);
-    }
+    deleteMutation.mutate(deleteTarget.gameId);
   };
 
   const cancelDelete = () => {
@@ -337,9 +295,9 @@ export default function GameProfileManager({ userId, isOwnProfile }: GameProfile
                   <button 
                     className={styles.syncButton}
                     onClick={() => handleSync(profile.gameId)}
-                    disabled={syncing === profile.gameId}
+                    disabled={syncingGameId === profile.gameId}
                   >
-                    {syncing === profile.gameId ? '🔄 Đang đồng bộ...' : '🔄 Đồng bộ'}
+                    {syncingGameId === profile.gameId ? '🔄 Đang đồng bộ...' : '🔄 Đồng bộ'}
                   </button>
                   <button 
                      className={styles.deleteButton}

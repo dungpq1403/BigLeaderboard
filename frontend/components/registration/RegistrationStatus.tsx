@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './RegistrationStatus.module.css';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface RegistrationStatusProps {
   tournamentId: number;
@@ -17,6 +17,19 @@ interface RegistrationStatusProps {
 
 type Status = 'not_registered' | 'registered' | 'cancelled';
 
+type CheckRegistrationResponse = {
+  isRegistered: boolean;
+  status?: 'approved' | 'registered' | 'cancelled' | string;
+};
+
+// Helper kiểm tra đăng nhập đồng bộ (chỉ dùng client). Không bao bọc thành
+// state để tránh setState-in-effect; isLoggedIn thay đổi cùng tab sẽ trigger
+// invalidate query 'auth' (xem TopBar.tsx).
+function readIsLoggedIn(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!localStorage.getItem('authSession');
+}
+
 export default function RegistrationStatus({ 
   tournamentId, 
   tournamentCreatorId,
@@ -25,54 +38,53 @@ export default function RegistrationStatus({
   onStatusChange 
 }: RegistrationStatusProps) {
   const router = useRouter();
-  const [status, setStatus] = useState<Status>('not_registered');
-  const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const queryClient = useQueryClient();
 
   // Kiểm tra nếu user là host của giải đấu
   const isHost = currentUserId && tournamentCreatorId && currentUserId === tournamentCreatorId;
+  const isLoggedIn = readIsLoggedIn();
 
-  const checkRegistration = async () => {
-    try {
-      const session = localStorage.getItem('authSession');
-      let token = '';
-      
-      if (session) {
-        const parsed = JSON.parse(session);
-        token = parsed.token;
-        setIsLoggedIn(true);
-      } else {
-        setIsLoggedIn(false);
-        setStatus('not_registered');
-        setLoading(false);
+  // Query check-registration: chỉ chạy khi user đã login + không phải host.
+  // Cache theo tournamentId để các badge cùng tournament dùng chung kết quả.
+  const { data: status = 'not_registered', isLoading: loading } = useQuery<Status>({
+    queryKey: ['registration', tournamentId],
+    enabled: isLoggedIn && !isHost,
+    queryFn: async ({ signal }) => {
+      const data = await apiFetch<CheckRegistrationResponse>(
+        `/tournaments/${tournamentId}/check-registration`,
+        { signal }
+      );
+      if (!data?.isRegistered) return 'not_registered';
+      return data.status === 'approved' ? 'registered' : (data.status as Status);
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ message?: string }>(
+        `/tournaments/${tournamentId}/cancel-registration`,
+        { method: 'DELETE' }
+      ),
+    onSuccess: () => {
+      toast.success('Đã hủy đăng ký thành công!');
+      queryClient.setQueryData<Status>(['registration', tournamentId], 'not_registered');
+      // Invalidate các query liên quan (participant list, tournament detail...).
+      queryClient.invalidateQueries({ queryKey: ['tournaments', tournamentId] });
+      onStatusChange?.();
+      router.refresh();
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        toast.error('Vui lòng đăng nhập');
+        router.push('/login');
         return;
       }
-      
-      const response = await fetch(`${API_BASE}/tournaments/${tournamentId}/check-registration`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      const data = await response.json();
-      
-      if (data.isRegistered) {
-        setStatus(data.status === 'approved' ? 'registered' : data.status);
-      } else {
-        setStatus('not_registered');
-      }
-    } catch (error) {
-      console.error('Failed to check registration:', error);
-      setStatus('not_registered');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const msg = err instanceof Error ? err.message : 'Hủy đăng ký thất bại';
+      toast.error(msg);
+    },
+  });
 
-  useEffect(() => {
-    checkRegistration();
-  }, [tournamentId]);
+  const isCancelling = cancelMutation.isPending;
 
   const getStatusText = () => {
     switch (status) {
@@ -106,51 +118,11 @@ export default function RegistrationStatus({
     router.push(`/tournaments/${tournamentId}/register`);
   };
 
-  const handleCancelClick = async () => {
+  const handleCancelClick = () => {
     if (!confirm('Bạn có chắc chắn muốn hủy đăng ký tham gia giải đấu này không?')) {
       return;
     }
-    
-    setIsCancelling(true);
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Vui lòng đăng nhập');
-        router.push('/login');
-        return;
-      }
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/tournaments/${tournamentId}/cancel-registration`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        toast.error(data.message || 'Hủy đăng ký thất bại');
-        return;
-      }
-      
-      toast.success('Đã hủy đăng ký thành công!');
-      setStatus('not_registered');
-      
-      if (onStatusChange) {
-        onStatusChange();
-      }
-      
-      // Refresh page data
-      router.refresh();
-    } catch (error) {
-      toast.error('Không thể kết nối server');
-    } finally {
-      setIsCancelling(false);
-    }
+    cancelMutation.mutate();
   };
 
   // Nếu user là host, không hiển thị gì cả

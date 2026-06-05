@@ -1,49 +1,44 @@
 // hooks/useDeleteImage.ts
-import { useState } from 'react';
 import { toast } from 'react-toastify';
+import { useMutation } from '@tanstack/react-query';
+import { apiFetch, ApiError } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
+/**
+ * Hook xóa file ảnh trên server. Dùng useMutation để:
+ *  - Có sẵn `isPending` thay vì state thủ công.
+ *  - Tận dụng auth header tự động của apiFetch.
+ *
+ * Trả về Promise<boolean> để caller có thể await và quyết định bước tiếp
+ * theo (vd. xóa record trong DB chỉ sau khi xóa ảnh thành công).
+ */
 export function useDeleteImage() {
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const deleteImage = async (imageUrl: string): Promise<boolean> => {
-    if (!imageUrl) return true;
-    
-    setIsDeleting(true);
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Vui lòng đăng nhập');
-        return false;
-      }
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/upload/delete-image`, {
+  const mutation = useMutation({
+    mutationFn: async (imageUrl: string) => {
+      if (!imageUrl) return true;
+      await apiFetch<{ message?: string }>(`/upload/delete-image`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ imageUrl }),
+        body: { imageUrl },
       });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.error('Delete image failed:', data.message);
-        return false;
-      }
-      
       return true;
-    } catch (error) {
-      console.error('Delete image error:', error);
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        toast.error('Vui lòng đăng nhập');
+      } else {
+        console.error('Delete image error:', err);
+      }
+    },
+  });
+
+  // Wrap trả về API tương thích với caller cũ (deleteImage: (url) => Promise<boolean>).
+  const deleteImage = async (imageUrl: string): Promise<boolean> => {
+    try {
+      const result = await mutation.mutateAsync(imageUrl);
+      return result;
+    } catch {
       return false;
-    } finally {
-      setIsDeleting(false);
     }
   };
 
-  return { deleteImage, isDeleting };
+  return { deleteImage, isDeleting: mutation.isPending };
 }

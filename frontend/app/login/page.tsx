@@ -4,9 +4,20 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import styles from "./page.module.css";
+import { apiFetch, ApiError } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+type LoginResponse = {
+  token: string;
+  user: {
+    id: number;
+    username: string;
+    email: string;
+    fullName: string;
+    role?: string;
+  };
+};
 
 function getRememberedAuth() {
   if (typeof window === "undefined") {
@@ -34,13 +45,13 @@ function getRememberedAuth() {
 
 export default function LoginPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const rememberedAuth = getRememberedAuth();
   const [loginType, setLoginType] = useState<"username" | "email">("username");
   const [username, setUsername] = useState(rememberedAuth.username);
   const [email, setEmail] = useState(rememberedAuth.email);
   const [password, setPassword] = useState(rememberedAuth.password);
   const [rememberMe, setRememberMe] = useState(rememberedAuth.rememberMe);
-  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -70,50 +81,36 @@ export default function LoginPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-    
-    setLoading(true);
-
-    try {
-      const loginData = loginType === "username" 
-        ? { username, password }
-        : { email, password };
-
-      const response = await fetch(`${API_BASE}/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(loginData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.message || "Login failed.");
-        return;
-      }
-
-      if (!data.token || !data.user) {
-        toast.error("Invalid login response from server.");
+  // Mutation login — không cần auth header, dùng auth: false để apiFetch không
+  // gắn Authorization (sẽ không có anyway, nhưng để rõ ý).
+  const loginMutation = useMutation({
+    mutationFn: (body: { username?: string; email?: string; password: string }) =>
+      apiFetch<LoginResponse>(`/login`, {
+        method: 'POST',
+        body,
+        auth: false,
+      }),
+    onSuccess: (data) => {
+      if (!data?.token || !data?.user) {
+        toast.error('Invalid login response from server.');
         return;
       }
 
       if (rememberMe) {
-        localStorage.setItem("rememberedAuth", JSON.stringify({ 
-          username: loginType === "username" ? username : "",
-          email: loginType === "email" ? email : "",
-          password 
-        }));
+        localStorage.setItem(
+          'rememberedAuth',
+          JSON.stringify({
+            username: loginType === 'username' ? username : '',
+            email: loginType === 'email' ? email : '',
+            password,
+          })
+        );
       } else {
-        localStorage.removeItem("rememberedAuth");
+        localStorage.removeItem('rememberedAuth');
       }
 
       localStorage.setItem(
-        "authSession",
+        'authSession',
         JSON.stringify({
           token: data.token,
           user: {
@@ -121,19 +118,35 @@ export default function LoginPage() {
             username: data.user.username,
             email: data.user.email,
             fullName: data.user.fullName,
-            role: data.user.role, // Thêm dòng này
+            role: data.user.role,
           },
         })
       );
-      window.dispatchEvent(new Event("auth-changed"));
+      window.dispatchEvent(new Event('auth-changed'));
+      // Invalidate auth query để TopBar re-verify ngay (không phải đợi event
+      // listener tab khác). Đây là race-free path.
+      queryClient.invalidateQueries({ queryKey: ['auth', 'verify'] });
 
       toast.success(`Welcome back, ${data.user?.fullName || username || email}!`);
-      router.push("/");
-    } catch {
-      toast.error("Cannot connect to server.");
-    } finally {
-      setLoading(false);
-    }
+      router.push('/');
+    },
+    onError: (err) => {
+      if (err instanceof ApiError) {
+        toast.error(err.message || 'Login failed.');
+      } else {
+        toast.error('Cannot connect to server.');
+      }
+    },
+  });
+  const loading = loginMutation.isPending;
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!validateForm()) return;
+
+    const body =
+      loginType === 'username' ? { username, password } : { email, password };
+    loginMutation.mutate(body);
   };
 
   return (

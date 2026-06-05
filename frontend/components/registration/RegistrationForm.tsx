@@ -3,13 +3,13 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import styles from './RegistrationForm.module.css';
 import TournamentStatus from '@/components/tournament/TournamentStatus';
 import TournamentCreator from '@/components/tournament/TournamentCreator';
 import TeamMemberForm from '@/components/team/TeamMemberForm';
 import { useFormat } from '@/context/FormatContext';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface Tournament {
   id: number;
@@ -49,11 +49,19 @@ interface TeamMember {
   country: string;
 }
 
+// Shape của các thông tin trong profile user mà form sẽ dùng để auto-fill.
+type UserProfile = {
+  username?: string;
+  fullName?: string;
+  birthDate?: string;
+  email?: string;
+  country?: string;
+};
+
 export default function RegistrationForm({ tournament, userId, onSuccess, onCancel }: RegistrationFormProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { getFormatName, getFormatIcon } = useFormat();
-  const [loading, setLoading] = useState(false);
-  const [loadingProfile, setLoadingProfile] = useState(false);
   
   // Dữ liệu chung cho đội
   const [teamName, setTeamName] = useState('');
@@ -98,53 +106,44 @@ export default function RegistrationForm({ tournament, userId, onSuccess, onCanc
     }
   }, [isTeamTournament, requiredMembers]);
 
-  // Fetch user profile
-  const fetchUserProfile = async () => {
-    setLoadingProfile(true);
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) return;
-      
-      const { token } = JSON.parse(session);
-      const response = await fetch(`${API_BASE}/users/${userId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      
-      if (response.ok) {
-        const userData = await response.json();
-        
-        if (!isTeamTournament) {
-          setFormData({
-            username: userData.username || '',
+  // Auto-fill profile bằng mutation (one-shot khi user click button).
+  // Sau khi fetch thành công, đẩy thông tin vào cache ['users', userId] để
+  // các component khác (vd. profile page) khỏi phải fetch lại.
+  const profileMutation = useMutation({
+    mutationFn: () => apiFetch<UserProfile>(`/users/${userId}`),
+    onSuccess: (userData) => {
+      queryClient.setQueryData(['users', userId], userData);
+      if (!isTeamTournament) {
+        setFormData({
+          username: userData.username || '',
+          fullName: userData.fullName || '',
+          birthDate: userData.birthDate ? userData.birthDate.split('T')[0] : '',
+          email: userData.email || '',
+          phone: '',
+          country: userData.country || '',
+        });
+        toast.success('Đã tự động điền thông tin từ profile!');
+      } else {
+        const updatedMembers = [...teamMembers];
+        if (updatedMembers[0]) {
+          updatedMembers[0] = {
+            ...updatedMembers[0],
             fullName: userData.fullName || '',
             birthDate: userData.birthDate ? userData.birthDate.split('T')[0] : '',
             email: userData.email || '',
-            phone: '',
             country: userData.country || '',
-          });
-          toast.success('Đã tự động điền thông tin từ profile!');
-        } else {
-          const updatedMembers = [...teamMembers];
-          if (updatedMembers[0]) {
-            updatedMembers[0] = {
-              ...updatedMembers[0],
-              fullName: userData.fullName || '',
-              birthDate: userData.birthDate ? userData.birthDate.split('T')[0] : '',
-              email: userData.email || '',
-              country: userData.country || '',
-            };
-            setTeamMembers(updatedMembers);
-          }
-          toast.success('Đã tự động điền thông tin cho thành viên chính thứ nhất!');
+          };
+          setTeamMembers(updatedMembers);
         }
+        toast.success('Đã tự động điền thông tin cho thành viên chính thứ nhất!');
       }
-    } catch (error) {
-      console.error('Failed to fetch profile:', error);
+    },
+    onError: () => {
       toast.error('Không thể lấy thông tin profile');
-    } finally {
-      setLoadingProfile(false);
-    }
-  };
+    },
+  });
+  const fetchUserProfile = () => profileMutation.mutate();
+  const loadingProfile = profileMutation.isPending;
 
   // Handlers cho cá nhân
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -285,42 +284,53 @@ export default function RegistrationForm({ tournament, userId, onSuccess, onCanc
            Object.keys(newSubErrors).length === 0;
   };
 
-  // Submit
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    
-    const isValid = isTeamTournament ? validateTeam() : validateIndividual();
-    if (!isValid) return;
-    
-    setLoading(true);
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
+  // Mutation đăng ký tham gia giải. Tách body building khỏi mutationFn để
+  // dễ đọc. Sau khi đăng ký xong → invalidate registration status + tournament.
+  const registerMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiFetch<{ message?: string }>(
+        `/tournaments/${tournament.id}/register`,
+        { method: 'POST', body }
+      ),
+    onSuccess: () => {
+      toast.success('Đăng ký thành công!');
+      queryClient.invalidateQueries({ queryKey: ['registration', tournament.id] });
+      queryClient.invalidateQueries({ queryKey: ['tournaments', tournament.id] });
+      if (onSuccess) onSuccess();
+      else router.push(`/tournaments/${tournament.id}`);
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
         toast.error('Vui lòng đăng nhập để đăng ký');
         router.push('/login');
         return;
       }
-      
-      const { token } = JSON.parse(session);
-      
-      let requestBody;
-      
-      if (isTeamTournament) {
-        requestBody = {
+      const msg = err instanceof Error ? err.message : 'Đăng ký thất bại';
+      toast.error(msg);
+    },
+  });
+  const loading = registerMutation.isPending;
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const isValid = isTeamTournament ? validateTeam() : validateIndividual();
+    if (!isValid) return;
+
+    const body = isTeamTournament
+      ? {
           tournamentId: tournament.id,
           userId,
           teamName: teamName.trim(),
           participantType: 'team',
           members: teamMembers.map(({ fullName, birthDate, email, phone, country }) => ({
-            fullName, birthDate, email, phone, country
+            fullName, birthDate, email, phone, country,
           })),
           substitutes: teamSubstitutes.map(({ fullName, birthDate, email, phone, country }) => ({
-            fullName, birthDate, email, phone, country
+            fullName, birthDate, email, phone, country,
           })),
-        };
-      } else {
-        requestBody = {
+        }
+      : {
           tournamentId: tournament.id,
           userId,
           username: formData.username,
@@ -331,29 +341,8 @@ export default function RegistrationForm({ tournament, userId, onSuccess, onCanc
           country: formData.country,
           participantType: 'person',
         };
-      }
-      
-      const response = await fetch(`${API_BASE}/tournaments/${tournament.id}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(requestBody),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        toast.error(data.message || 'Đăng ký thất bại');
-        return;
-      }
-      
-      toast.success('Đăng ký thành công!');
-      if (onSuccess) onSuccess();
-      else router.push(`/tournaments/${tournament.id}`);
-    } catch (error) {
-      toast.error('Không thể kết nối đến server');
-    } finally {
-      setLoading(false);
-    }
+
+    registerMutation.mutate(body);
   };
 
   const formatCurrency = (amount: number) => {

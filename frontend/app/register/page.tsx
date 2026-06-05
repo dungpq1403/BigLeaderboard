@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "react-toastify";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import styles from "./page.module.css";
 import { useRouter } from "next/navigation";
+import { apiFetch, ApiError } from "@/lib/api";
 
 // Map message từ backend về field tương ứng để hiển thị inline.
 // Nếu không match key nào → trả về null, caller dùng formError chung.
@@ -84,8 +86,6 @@ const FIELD_VALIDATORS: Record<
   },
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
 interface Country {
   name: {
     common: string;
@@ -108,7 +108,6 @@ export default function RegisterPage() {
   const [country, setCountry] = useState("");
   const [description, setDescription] = useState("");
   const [reEnterPassword, setReEnterPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   // errors lưu cả lỗi validation field-level (username/email/...) lẫn lỗi
   // không thuộc validation (errors.country từ fetch fail).
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -118,49 +117,50 @@ export default function RegisterPage() {
   // Lỗi cấp form (server/network errors không gắn được vào field cụ thể).
   // Hiển thị ngay trên nút Register dưới dạng inline text.
   const [formError, setFormError] = useState<string | null>(null);
-  const [countries, setCountries] = useState<Country[]>([]);
   const [countryOpen, setCountryOpen] = useState(false);
   const [searchCountry, setSearchCountry] = useState("");
   const countryDropdownRef = useRef<HTMLDivElement>(null);
   const countrySearchRef = useRef<HTMLInputElement>(null);
 
+  // Country list fetched từ restcountries.com (external API). Dùng useQuery
+  // để dedupe và cache lâu — danh sách quốc gia gần như không bao giờ đổi
+  // trong 1 phiên user. staleTime = Infinity để khỏi refetch.
+  const {
+    data: countries = [],
+    isError: countriesError,
+  } = useQuery<Country[]>({
+    queryKey: ['external', 'countries'],
+    queryFn: async ({ signal }) => {
+      const response = await fetch(
+        `https://restcountries.com/v3.1/all?fields=name,flags,cca2`,
+        { signal }
+      );
+      if (!response.ok) throw new Error('Country fetch failed');
+      const data: Country[] = await response.json();
+      return [...data].sort((a, b) =>
+        a.name.common.localeCompare(b.name.common)
+      );
+    },
+    staleTime: Infinity,
+    retry: 1,
+  });
+
+  // Đồng bộ lỗi/clear lỗi country dựa trên trạng thái query. Đặt trong effect
+  // riêng để không tự setState in queryFn (anti-pattern).
   useEffect(() => {
-    async function fetchCountries() {
-      try {
-        const response = await fetch(
-          `https://restcountries.com/v3.1/all?fields=name,flags,cca2`
-        );
-        if (response.ok) {
-          const data: Country[] = await response.json();
-          if (data) {
-            const sorted = [...data].sort((a, b) =>
-              a.name.common.localeCompare(b.name.common)
-            );
-            setCountries(sorted);
-            // Reset country error nếu trước đó đã set vì retry thành công
-            setErrors((prev) => {
-              if (!prev.country) return prev;
-              const next = { ...prev };
-              delete next.country;
-              return next;
-            });
-          }
-        } else {
-          setErrors((prev) => ({
-            ...prev,
-            country: "Không tải được danh sách quốc gia.",
-          }));
-        }
-      } catch (error) {
-        console.error("Error fetching countries:", error);
-        setErrors((prev) => ({
-          ...prev,
-          country: "Không thể kết nối tới dịch vụ quốc gia.",
-        }));
+    setErrors((prev) => {
+      if (countriesError) {
+        if (prev.country) return prev;
+        return { ...prev, country: 'Không tải được danh sách quốc gia.' };
       }
-    }
-    fetchCountries();
-  }, []);
+      if (countries.length > 0 && prev.country) {
+        const next = { ...prev };
+        delete next.country;
+        return next;
+      }
+      return prev;
+    });
+  }, [countriesError, countries.length]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -259,7 +259,46 @@ export default function RegisterPage() {
     return errs;
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const registerMutation = useMutation({
+    mutationFn: (body: Record<string, string>) =>
+      apiFetch<{ message?: string }>(`/register`, {
+        method: 'POST',
+        body,
+        auth: false,
+      }),
+    onSuccess: () => {
+      toast.success('Register successful. You can login now.');
+      // Reset cả touched để hiệu ứng live-validation không flash lỗi
+      // "X là bắt buộc" trong khoảnh khắc clear field trước khi redirect.
+      setTouched({});
+      setErrors({});
+      setUsername('');
+      setEmail('');
+      setPassword('');
+      setReEnterPassword('');
+      setFullName('');
+      setBirthDate('');
+      setCountry('');
+      setDescription('');
+      router.push('/login');
+    },
+    onError: (err) => {
+      const serverMsg = err instanceof ApiError ? err.message : null;
+      if (serverMsg) {
+        const fieldErr = mapServerErrorToField(serverMsg);
+        if (fieldErr) {
+          setErrors((prev) => ({ ...prev, [fieldErr.field]: fieldErr.text }));
+        } else {
+          setFormError(serverMsg || 'Register failed.');
+        }
+      } else {
+        setFormError('Không thể kết nối tới server. Vui lòng thử lại.');
+      }
+    },
+  });
+  const loading = registerMutation.isPending;
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError(null);
 
@@ -284,57 +323,15 @@ export default function RegisterPage() {
       return;
     }
 
-    setLoading(true);
-
-    try {
-      const response = await fetch(`${API_BASE}/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          username,
-          email,
-          password,
-          fullName,
-          birthDate,
-          country,
-          description,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        const serverMsg = data?.message || "Register failed.";
-        const fieldErr = mapServerErrorToField(serverMsg);
-        if (fieldErr) {
-          setErrors((prev) => ({ ...prev, [fieldErr.field]: fieldErr.text }));
-        } else {
-          setFormError(serverMsg);
-        }
-        return;
-      }
-
-      toast.success("Register successful. You can login now.");
-      // Reset cả touched để hiệu ứng live-validation không flash lỗi
-      // "X là bắt buộc" trong khoảnh khắc clear field trước khi redirect.
-      setTouched({});
-      setErrors({});
-      setUsername("");
-      setEmail("");
-      setPassword("");
-      setReEnterPassword("");
-      setFullName("");
-      setBirthDate("");
-      setCountry("");
-      setDescription("");
-      router.push("/login");
-    } catch {
-      setFormError("Không thể kết nối tới server. Vui lòng thử lại.");
-    } finally {
-      setLoading(false);
-    }
+    registerMutation.mutate({
+      username,
+      email,
+      password,
+      fullName,
+      birthDate,
+      country,
+      description,
+    });
   };
 
   return (

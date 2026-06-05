@@ -4,7 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { createPortal } from 'react-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import styles from './DeleteTournamentButton.module.css';
+import { apiFetch, ApiError } from '@/lib/api';
 
 interface DeleteTournamentButtonProps {
   tournamentId: number;
@@ -13,8 +15,6 @@ interface DeleteTournamentButtonProps {
   variant?: 'button' | 'icon';
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-
 export default function DeleteTournamentButton({ 
   tournamentId, 
   tournamentName, 
@@ -22,8 +22,8 @@ export default function DeleteTournamentButton({
   variant = 'button'
 }: DeleteTournamentButtonProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showConfirm, setShowConfirm] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -31,46 +31,38 @@ export default function DeleteTournamentButton({
     return () => setMounted(false);
   }, []);
 
-  const handleDelete = async () => {
-    setLoading(true);
-    
-    try {
-      const session = localStorage.getItem('authSession');
-      if (!session) {
-        toast.error('Vui lòng đăng nhập');
-        return;
-      }
-      
-      const { token } = JSON.parse(session);
-      
-      const response = await fetch(`${API_BASE}/tournaments/${tournamentId}`, {
+  const deleteMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ message?: string }>(`/tournaments/${tournamentId}`, {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        toast.error(data.message || 'Xóa giải đấu thất bại');
-        return;
-      }
-      
+      }),
+    onSuccess: () => {
       toast.success(`Đã xóa giải đấu "${tournamentName}"`);
-      
+      // Invalidate mọi query liên quan đến tournament/giải đấu cụ thể.
+      // Dùng prefix queryKey nên cả ['games', ..., 'tournaments'] cũng được
+      // refetch nếu có; ['tournaments', id] cũng bị invalidate.
+      queryClient.invalidateQueries({ queryKey: ['games'] });
+      queryClient.removeQueries({ queryKey: ['tournaments', tournamentId] });
+      setShowConfirm(false);
       if (onDelete) {
         onDelete();
       } else {
         router.push('/');
       }
-    } catch (error) {
-      toast.error('Không thể kết nối đến server');
-    } finally {
-      setLoading(false);
+    },
+    onError: (err) => {
+      if (err instanceof ApiError && err.status === 401) {
+        toast.error('Vui lòng đăng nhập');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Xóa giải đấu thất bại';
+        toast.error(msg);
+      }
       setShowConfirm(false);
-    }
-  };
+    },
+  });
+
+  const handleDelete = () => deleteMutation.mutate();
+  const loading = deleteMutation.isPending;
 
   const modalContent = showConfirm && mounted && createPortal(
     <div className={styles.overlay} onClick={() => setShowConfirm(false)}>

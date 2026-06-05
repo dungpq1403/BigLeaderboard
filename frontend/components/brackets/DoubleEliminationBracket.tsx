@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './DoubleEliminationBracket.module.css';
 import { apiFetch, ApiError } from '@/lib/api';
+import { useDragToScroll } from '@/hooks/useDragToScroll';
 
 // =====================================================
 // Types
@@ -1064,6 +1065,15 @@ export default function DoubleEliminationBracket({
     return teams;
   }, [outputCount, grandFinal, wbFinal, lbFinal, getEffectiveWinner]);
 
+  // Hook biến scrollWrapper thành "drag-to-pan" — người dùng giữ chuột trái
+  // và kéo để di chuyển vùng nhìn của nhánh đấu. Khoá click kế tiếp sau khi
+  // kéo để không vô tình mở modal nhập tỉ số.
+  const {
+    ref: scrollWrapperRef,
+    isDragging,
+    onMouseDown: onScrollMouseDown,
+  } = useDragToScroll<HTMLDivElement>();
+
   // ---- Empty states ----
   if (stageIndex < 0) {
     return (
@@ -1136,7 +1146,11 @@ export default function DoubleEliminationBracket({
         </div>
       )}
 
-      <div className={styles.scrollWrapper}>
+      <div
+        ref={scrollWrapperRef}
+        className={`${styles.scrollWrapper} ${isDragging ? styles.dragging : ''}`}
+        onMouseDown={onScrollMouseDown}
+      >
         {/* bracketArea: flex ROW — cột trái chứa WB + LB stack dọc, cột phải
             chứa GF căn giữa theo trục dọc. SVG overlay phủ toàn bracketArea để
             vẽ đường nối từ mép phải WB/LB Final sang mép trái GF, theo đúng

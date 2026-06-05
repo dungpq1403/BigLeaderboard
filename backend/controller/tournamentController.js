@@ -37,6 +37,27 @@ const SUPPORTED_FORMATS = new Set([
   'double_elimination',
 ]);
 
+// Swiss cần đủ số đội cho 8 trận BO1 mở màn rồi mới chia nhánh thắng-thua, nên
+// ràng buộc tối thiểu 16 đội/người. Giữ đồng bộ với FE (SWISS_MIN_PARTICIPANTS
+// ở FormatOrderSelector). Đổi 1 nơi → đổi 2 nơi.
+const SWISS_MIN_PARTICIPANTS = 16;
+
+// Kiểm tra ràng buộc giữa formats và maxParticipants. Tách riêng khỏi
+// validateFormatsOrder vì có 1 số endpoint chỉ validate formats mà không gửi
+// maxParticipants (update riêng phần thể thức), khi đó skip check này.
+function validateFormatsParticipantConstraints(formats, maxParticipants) {
+  if (!Array.isArray(formats)) return { ok: true };
+  if (!formats.includes('swiss')) return { ok: true };
+  const n = Number(maxParticipants);
+  if (!Number.isFinite(n) || n < SWISS_MIN_PARTICIPANTS) {
+    return {
+      ok: false,
+      message: `Vòng Swiss yêu cầu số lượng tham gia tối thiểu ${SWISS_MIN_PARTICIPANTS}.`,
+    };
+  }
+  return { ok: true };
+}
+
 function validateFormatsOrder(formats) {
   if (!Array.isArray(formats) || formats.length === 0) {
     return { ok: false, message: 'Phải chọn ít nhất một thể thức.' };
@@ -244,6 +265,12 @@ const tournamentController = {
       const formatsCheck = validateFormatsOrder(formats);
       if (!formatsCheck.ok) {
         return res.status(400).json({ message: formatsCheck.message });
+      }
+
+      // Ràng buộc Swiss ↔ maxParticipants (đồng bộ FE/BE)
+      const swissCheck = validateFormatsParticipantConstraints(formats, maxParticipants);
+      if (!swissCheck.ok) {
+        return res.status(400).json({ message: swissCheck.message });
       }
 
       // Trong POST /tournaments và PUT /tournaments/:id
@@ -490,6 +517,20 @@ const tournamentController = {
         if (!formatsCheck.ok) {
           return res.status(400).json({ message: formatsCheck.message });
         }
+      }
+
+      // Ràng buộc Swiss ↔ maxParticipants: dùng giá trị mới nếu được gửi, fallback
+      // về giá trị đang lưu trong DB. Bắt cả case user chỉ giảm maxParticipants
+      // mà không đổi formats, hoặc chỉ đổi formats mà không gửi maxParticipants.
+      const effectiveFormats = formats !== undefined ? formats : tournament.formats;
+      const effectiveMaxParticipants =
+        maxParticipants !== undefined ? maxParticipants : tournament.maxParticipants;
+      const swissCheck = validateFormatsParticipantConstraints(
+        effectiveFormats,
+        effectiveMaxParticipants,
+      );
+      if (!swissCheck.ok) {
+        return res.status(400).json({ message: swissCheck.message });
       }
 
       // Snapshot lại formats CŨ TRƯỚC khi update để diff sau khi đã ghi giá trị

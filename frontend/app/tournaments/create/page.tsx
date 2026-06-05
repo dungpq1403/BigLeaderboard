@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { toast } from 'react-toastify';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import styles from './page.module.css';
-import FormatOrderSelector from '@/components/FormatOrderSelector';
+import FormatOrderSelector, { SWISS_MIN_PARTICIPANTS } from '@/components/FormatOrderSelector';
 import ContactList from '@/components/ContactList';
 import GroupColumnsManager from '@/components/GroupColumnsManager';
 import AdvancementStepsManager from '@/components/AdvancementStepsManager';
@@ -122,6 +122,15 @@ export default function CreateTournamentPage() {
     if (!formData.maxParticipants) newErrors.maxParticipants = 'Số lượng tham gia là bắt buộc';
     if (formData.maxParticipants && parseInt(formData.maxParticipants) <= 0) {
       newErrors.maxParticipants = 'Số lượng tham gia phải lớn hơn 0';
+    }
+    // Swiss yêu cầu số đội/người ≥ SWISS_MIN_PARTICIPANTS. Defense thứ 3 sau FE
+    // (FormatOrderSelector tự loại Swiss khi giảm số đội) và backend validator.
+    if (
+      formatOrder.includes('swiss') &&
+      formData.maxParticipants &&
+      parseInt(formData.maxParticipants) < SWISS_MIN_PARTICIPANTS
+    ) {
+      newErrors.maxParticipants = `Vòng Swiss yêu cầu số lượng tham gia tối thiểu ${SWISS_MIN_PARTICIPANTS}`;
     }
     if (formData.prize && parseFloat(formData.prize) < 0) {
       newErrors.prize = 'Tiền thưởng không được âm';
@@ -284,6 +293,9 @@ export default function CreateTournamentPage() {
           <FormatOrderSelector
             value={formatOrder}
             onChange={setFormatOrder}
+            maxParticipants={
+              formData.maxParticipants ? parseInt(formData.maxParticipants) : null
+            }
           />
           {errors.formatOrder && <span className={styles.errorText}>{errors.formatOrder}</span>}
 

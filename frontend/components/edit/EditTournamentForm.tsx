@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import styles from './EditTournamentForm.module.css';
-import FormatOrderSelector from '@/components/FormatOrderSelector';
+import FormatOrderSelector, { SWISS_MIN_PARTICIPANTS } from '@/components/FormatOrderSelector';
 import ContactList from '@/components/ContactList';
 import GroupColumnsManager from '@/components/GroupColumnsManager';
 import AdvancementStepsManager from '@/components/AdvancementStepsManager';
@@ -169,6 +169,16 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
     if (formData.maxParticipants && parseInt(formData.maxParticipants) <= 0) {
       newErrors.maxParticipants = 'Số lượng tham gia phải lớn hơn 0';
     }
+    // Swiss yêu cầu số đội/người ≥ SWISS_MIN_PARTICIPANTS (đồng bộ với create page
+    // và backend). FormatOrderSelector đã tự loại Swiss khi giảm số đội, đây là
+    // lớp validate cuối cùng trước khi submit.
+    if (
+      formatOrder.includes('swiss') &&
+      formData.maxParticipants &&
+      parseInt(formData.maxParticipants) < SWISS_MIN_PARTICIPANTS
+    ) {
+      newErrors.maxParticipants = `Vòng Swiss yêu cầu số lượng tham gia tối thiểu ${SWISS_MIN_PARTICIPANTS}`;
+    }
     if (formData.startDate && formData.endDate && formData.startDate > formData.endDate) {
       newErrors.endDate = 'Ngày kết thúc phải sau ngày diễn ra';
     }
@@ -302,6 +312,9 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
           <FormatOrderSelector
             value={formatOrder}
             onChange={setFormatOrder}
+            maxParticipants={
+              formData.maxParticipants ? parseInt(formData.maxParticipants) : null
+            }
           />
           {errors.formatOrder && <span className={styles.errorText}>{errors.formatOrder}</span>}
 

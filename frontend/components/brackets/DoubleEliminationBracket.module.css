@@ -71,6 +71,15 @@
   border-radius: 0.5rem;
   border: 1px solid rgba(245, 158, 11, 0.2);
   overflow-x: auto;
+  /* Drag-to-pan: con trỏ "grab" báo hiệu có thể kéo, đổi sang "grabbing" khi
+     đang kéo. user-select: none tránh bôi đen text khi kéo. Card cặp đấu
+     override lại cursor: pointer/default ở .matchCard*. */
+  cursor: grab;
+  user-select: none;
+}
+
+.scrollWrapper.dragging {
+  cursor: grabbing;
 }
 
 /* Container relative để SVG overlay (absolute) bám đúng coords các card.
@@ -295,6 +304,10 @@
   z-index: 1;
   flex-shrink: 0;
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+  /* Override cursor "grab" của wrapper drag-to-pan trên các cặp đấu — kể cả
+     khi chưa thể click (chưa đủ 2 đội) vẫn giữ cursor mặc định để không gợi
+     ý kéo card riêng lẻ. */
+  cursor: default;
 }
 
 .matchCardClickable {

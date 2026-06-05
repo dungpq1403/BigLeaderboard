@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './SingleEliminationBracket.module.css';
 import { apiFetch, ApiError } from '@/lib/api';
+import { useDragToScroll } from '@/hooks/useDragToScroll';
 
 // =====================================================
 // Types
@@ -789,6 +790,15 @@ export default function SingleEliminationBracket({
 
   const thirdPlaceDef = matchDefs.find((m) => m.isThirdPlace);
 
+  // Hook biến scrollWrapper thành "drag-to-pan" — người dùng giữ chuột trái
+  // và kéo để di chuyển vùng nhìn của nhánh đấu (vẫn giữ nguyên scroll bằng
+  // wheel + thanh cuộn). isDragging dùng để đổi cursor sang `grabbing`.
+  const {
+    ref: scrollWrapperRef,
+    isDragging,
+    onMouseDown: onScrollMouseDown,
+  } = useDragToScroll<HTMLDivElement>();
+
   // Đội đi tiếp = winner của các root matches
   const advancingTeams = useMemo(() => {
     const teams: string[] = [];
@@ -869,7 +879,11 @@ export default function SingleEliminationBracket({
         </div>
       )}
 
-      <div className={styles.scrollWrapper}>
+      <div
+        ref={scrollWrapperRef}
+        className={`${styles.scrollWrapper} ${isDragging ? styles.dragging : ''}`}
+        onMouseDown={onScrollMouseDown}
+      >
         <div className={styles.bracketsRow}>
           {rootMatches.map((rm) => (
             <div key={rm.id} className={styles.bracketTree}>

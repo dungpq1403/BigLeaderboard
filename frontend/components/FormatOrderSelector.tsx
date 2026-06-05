@@ -23,6 +23,11 @@ const availableFormats: FormatOption[] = [
 const ANCHOR_IDS: ReadonlySet<string> = new Set(['swiss', 'group']);
 const isAnchor = (id: string) => ANCHOR_IDS.has(id);
 
+// Số lượng tham gia tối thiểu để được phép chọn Vòng Swiss. Lý do: Swiss cần đủ
+// đội để các vòng phân loại có ý nghĩa (8 trận BO1 mở màn rồi mới chia nhánh).
+// Quy tắc này được enforce ở cả FE (disable button + auto remove) và backend.
+export const SWISS_MIN_PARTICIPANTS = 16;
+
 // Chuẩn hoá thứ tự format đầu vào:
 //  - Bỏ id không hợp lệ
 //  - Bỏ trùng
@@ -53,10 +58,20 @@ function normalize(ids: string[]): FormatOption[] {
 interface FormatOrderSelectorProps {
   value: string[];           // thứ tự các format id
   onChange: (formats: string[]) => void;
+  // Số lượng người/đội tham gia tối đa. Quyết định Swiss có khả dụng hay không.
+  // Undefined / null / NaN → coi như chưa nhập, Swiss bị khoá.
+  maxParticipants?: number | null;
 }
 
-export default function FormatOrderSelector({ value, onChange }: FormatOrderSelectorProps) {
+export default function FormatOrderSelector({ value, onChange, maxParticipants }: FormatOrderSelectorProps) {
   const [selectedFormats, setSelectedFormats] = useState<FormatOption[]>(() => normalize(value));
+
+  // Swiss chỉ khả dụng khi số đội/người tham gia ≥ SWISS_MIN_PARTICIPANTS.
+  // Dùng NaN-safe check vì max có thể là null khi user chưa nhập.
+  const swissAllowed =
+    typeof maxParticipants === 'number' &&
+    Number.isFinite(maxParticipants) &&
+    maxParticipants >= SWISS_MIN_PARTICIPANTS;
 
   // Ref để tránh gọi onChange lặp lại với cùng nội dung (sẽ gây loop khi parent
   // re-render và truyền lại value mới có cùng nội dung sau normalize).
@@ -93,6 +108,39 @@ export default function FormatOrderSelector({ value, onChange }: FormatOrderSele
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
+  // Track xem trước đó Swiss có được phép hay không. Chỉ bắn toast cảnh báo khi
+  // user thực sự VI PHẠM quy tắc (đang phép → không còn phép, vd: hạ số đội từ
+  // 20 xuống 10 khi Swiss đã chọn). Không bắn toast ở lần mount đầu (form mới
+  // tạo: max trống + default formatOrder=['swiss'], hoặc edit giải legacy).
+  const wasSwissAllowedRef = useRef(swissAllowed);
+
+  // Khi số lượng tham gia giảm xuống dưới ngưỡng Swiss mà Swiss đang được chọn,
+  // tự động loại bỏ Swiss khỏi danh sách. Tránh trạng thái form không hợp lệ
+  // "ngầm" trong lúc gõ. Notify đã được debounce qua commit().
+  useEffect(() => {
+    if (swissAllowed) {
+      wasSwissAllowedRef.current = true;
+      return;
+    }
+    if (!selectedFormats.some(f => f.id === 'swiss')) return;
+
+    const next = selectedFormats.filter(f => f.id !== 'swiss');
+    commit(next);
+
+    // Chỉ cảnh báo nếu trước đó Swiss thực sự được phép → tức là user vừa hạ
+    // số đội xuống dưới ngưỡng. Không bắn toast lúc mount lần đầu để tránh
+    // làm phiền user khi mới mở form tạo giải/edit giải.
+    if (wasSwissAllowedRef.current) {
+      toast.warn(
+        `Đã bỏ Vòng Swiss vì số lượng tham gia phải đạt tối thiểu ${SWISS_MIN_PARTICIPANTS}.`,
+      );
+    }
+    wasSwissAllowedRef.current = false;
+    // commit không cần trong deps vì nó stable trong render hiện tại; ta chỉ
+    // muốn effect chạy lại khi swissAllowed hoặc selectedFormats đổi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swissAllowed, selectedFormats]);
+
   const moveUp = (index: number) => {
     if (index === 0) return;
     // Không cho đẩy 1 format thường lên trên anchor (anchor phải luôn ở vị trí 0)
@@ -118,6 +166,15 @@ export default function FormatOrderSelector({ value, onChange }: FormatOrderSele
 
   const addFormat = (format: FormatOption) => {
     if (selectedFormats.some(f => f.id === format.id)) return;
+
+    // Chặn chọn Swiss nếu chưa đủ điều kiện số người tham gia ≥ SWISS_MIN_PARTICIPANTS.
+    // Hiển thị toast giải thích để user biết phải tăng số đội trước khi chọn.
+    if (format.id === 'swiss' && !swissAllowed) {
+      toast.error(
+        `Vòng Swiss chỉ khả dụng khi số lượng tham gia đạt tối thiểu ${SWISS_MIN_PARTICIPANTS}.`,
+      );
+      return;
+    }
 
     if (isAnchor(format.id)) {
       // Swiss & vòng bảng loại trừ lẫn nhau
@@ -231,20 +288,29 @@ export default function FormatOrderSelector({ value, onChange }: FormatOrderSele
           {notSelected.map(format => {
             // Nếu đã có 1 anchor → disable anchor còn lại để hint trực quan
             const isAnotherAnchor = isAnchor(format.id) && hasAnchor;
+            // Swiss bị khoá khi số đội/người tham gia chưa đạt ngưỡng tối thiểu.
+            const isSwissBlocked = format.id === 'swiss' && !swissAllowed;
+            const disabled = isAnotherAnchor || isSwissBlocked;
+            const title = isAnotherAnchor
+              ? 'Đã có vòng phân loại (Swiss/Vòng bảng). Hai thể thức này loại trừ lẫn nhau.'
+              : isSwissBlocked
+                ? `Vòng Swiss chỉ khả dụng khi số lượng tham gia đạt tối thiểu ${SWISS_MIN_PARTICIPANTS}.`
+                : `Thêm ${format.name}`;
             return (
               <button
                 key={format.id}
                 type="button"
                 onClick={() => addFormat(format)}
                 className={styles.addBtn}
-                disabled={isAnotherAnchor}
-                title={
-                  isAnotherAnchor
-                    ? 'Đã có vòng phân loại (Swiss/Vòng bảng). Hai thể thức này loại trừ lẫn nhau.'
-                    : `Thêm ${format.name}`
-                }
+                disabled={disabled}
+                title={title}
               >
                 {format.icon} {format.name}
+                {isSwissBlocked && (
+                  <span className={styles.lockedTag} title={title}>
+                    🔒 cần ≥ {SWISS_MIN_PARTICIPANTS}
+                  </span>
+                )}
               </button>
             );
           })}

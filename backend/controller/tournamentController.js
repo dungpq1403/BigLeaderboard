@@ -47,7 +47,7 @@ const SWISS_MIN_PARTICIPANTS = 16;
 // validateFormatsOrder vì có 1 số endpoint chỉ validate formats mà không gửi
 // maxParticipants (update riêng phần thể thức), khi đó skip check này.
 function validateFormatsParticipantConstraints(formats, maxParticipants) {
-  if (!Array.isArray(formats)) return { ok: true };
+  if (!Array.isArray(formats)) return { ok: true }; 
   if (!formats.includes('swiss')) return { ok: true };
   const n = Number(maxParticipants);
   if (!Number.isFinite(n) || n < SWISS_MIN_PARTICIPANTS) {

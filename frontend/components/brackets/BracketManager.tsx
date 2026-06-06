@@ -6,6 +6,7 @@ import styles from './BracketManager.module.css';
 import GroupStageBracket from './GroupStageBracket';
 import SingleEliminationBracket from './SingleEliminationBracket';
 import DoubleEliminationBracket from './DoubleEliminationBracket';
+import SwissStageBracket from './SwissStageBracket';
 import SplitGroupsModal from './SplitGroupsModal';
 import { toast } from 'react-toastify';
 import { useFormat } from '@/context/FormatContext';
@@ -163,9 +164,72 @@ function computeQualifiedFromGroups(
   return qualifiers.slice(0, totalAdvancing).map((q) => ({ id: q.id, name: q.name }));
 }
 
+// Targetwins mặc định của Swiss stage (đồng bộ với default trong
+// SwissStageBracket: 3 thắng đi tiếp, 3 thua bị loại theo CS:GO Major).
+// Sau này khi expose UI cấu hình targetWins → đọc từ tournament thay vì hardcode.
+const SWISS_TARGET_WINS = 3;
+
+// Tính danh sách đội đi tiếp từ Swiss stage:
+//  - Đếm số trận thắng cho từng đội từ swiss_matches (winnerName là nguồn).
+//  - Đội đạt targetWins thắng = đã "đi tiếp" theo luật Swiss.
+//  - Sắp xếp ưu tiên: nhiều thắng trước (mặc dù tất cả qualifiers đều có cùng
+//    số thắng = targetWins, vẫn để chỗ cho extension), rồi alphabetical theo
+//    tên để FE có thứ tự ổn định giữa các lần render.
+//  - Slice xuống totalAdvancing (= maxParticipants/2 mặc định) để không vượt
+//    quá số slot ở nhánh đấu sau.
+//  - Dedup theo cả id LẪN name: đề phòng case data bị bẩn (vd: participant
+//    bị trùng id do cache stale, hoặc 2 participant trùng tên do user nhập
+//    nhầm). Mỗi team chỉ xuất hiện đúng 1 lần trong kết quả.
+function computeQualifiedFromSwiss(
+  swissMatches: any[],
+  participants: { id: string; name: string }[],
+  totalAdvancing: number,
+  targetWins: number = SWISS_TARGET_WINS,
+): { id: string; name: string }[] {
+  if (!Array.isArray(swissMatches) || swissMatches.length === 0) return [];
+  if (totalAdvancing <= 0) return [];
+
+  const winsByName = new Map<string, number>();
+  swissMatches.forEach((m) => {
+    const winner = typeof m?.winnerName === 'string' ? m.winnerName : null;
+    if (!winner) return;
+    winsByName.set(winner, (winsByName.get(winner) || 0) + 1);
+  });
+
+  const qualifiers: Array<{ id: string; name: string; wins: number }> = [];
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  participants.forEach((p) => {
+    if (seenIds.has(p.id) || seenNames.has(p.name)) return;
+    const wins = winsByName.get(p.name) || 0;
+    if (wins >= targetWins) {
+      seenIds.add(p.id);
+      seenNames.add(p.name);
+      qualifiers.push({ id: p.id, name: p.name, wins });
+    }
+  });
+
+  qualifiers.sort((a, b) => {
+    if (a.wins !== b.wins) return b.wins - a.wins;
+    return a.name.localeCompare(b.name);
+  });
+
+  return qualifiers.slice(0, totalAdvancing).map((q) => ({ id: q.id, name: q.name }));
+}
+
 type BracketDataResponse = {
   participants?: { id: number | string; name: string }[];
   matches?: { id: number; teamAId: number; teamBId: number; groupId?: number | string }[];
+};
+
+type SwissMatchesResponse = {
+  matches?: Array<{
+    matchId?: number;
+    winnerName?: string | null;
+    teamAName?: string | null;
+    teamBName?: string | null;
+    isCompleted?: boolean;
+  }>;
 };
 
 export default function BracketManager({ tournamentId, tournament, isCreator = false }: BracketManagerProps) {
@@ -225,6 +289,21 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     name: p.name,
   }));
   const groupMatches = Array.isArray(bracketData?.matches) ? (bracketData!.matches as any[]) : [];
+
+  // Query swiss matches (kết quả + winnerName) để có thể tính danh sách đội đi
+  // tiếp khi vòng kế tiếp là single/double elimination. Chỉ enable khi giải
+  // thực sự có format swiss để tránh request lãng phí.
+  const hasSwissFormat = (tournament.formats || []).includes('swiss');
+  const { data: swissData } = useQuery<SwissMatchesResponse>({
+    queryKey: ['tournaments', tournamentId, 'swiss-matches'],
+    queryFn: ({ signal }) =>
+      apiFetch<SwissMatchesResponse>(`/tournaments/${tournamentId}/swiss-matches`, {
+        signal,
+        auth: false,
+      }),
+    enabled: isClient && Number.isFinite(tournamentId) && hasSwissFormat,
+  });
+  const swissMatches = Array.isArray(swissData?.matches) ? (swissData!.matches as any[]) : [];
 
   // availableBrackets được derive trực tiếp từ tournament.formats để tab hiển thị
   // đúng theo thứ tự mà người tạo giải đã cấu hình ở modal Edit. Hàm
@@ -502,18 +581,28 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
         const seIndex = formatsArr.indexOf('single_elimination');
         const prevFormat = seIndex > 0 ? formatsArr[seIndex - 1] : null;
 
-        // Nếu vòng trước là 'group' và đã có matches → tính các đội đi tiếp
-        // từ kết quả vòng bảng để truyền sang single elim.
+        // Tính danh sách đội đi tiếp từ vòng trước (nếu vòng trước là vòng
+        // phân loại – group hoặc swiss). Total advancing được đọc từ
+        // advancementSteps đã cấu hình khi tạo giải:
+        //  - Với swiss → next: backend lưu giá trị auto = floor(max/2)
+        //  - Với group → next: user nhập tay
         let qualifiedTeams: { id: string; name: string }[] | undefined;
-        if (prevFormat === 'group' && groupMatches.length > 0) {
-          const totalAdvancing = advSteps[seIndex - 1];
-          if (typeof totalAdvancing === 'number' && totalAdvancing > 0) {
-            qualifiedTeams = computeQualifiedFromGroups(
-              groupMatches,
-              participantList,
-              totalAdvancing,
-            );
-          }
+        const totalAdvancing = advSteps[seIndex - 1];
+        const validTotal =
+          typeof totalAdvancing === 'number' && totalAdvancing > 0 ? totalAdvancing : null;
+
+        if (prevFormat === 'group' && groupMatches.length > 0 && validTotal) {
+          qualifiedTeams = computeQualifiedFromGroups(
+            groupMatches,
+            participantList,
+            validTotal,
+          );
+        } else if (prevFormat === 'swiss' && swissMatches.length > 0 && validTotal) {
+          qualifiedTeams = computeQualifiedFromSwiss(
+            swissMatches,
+            participantList,
+            validTotal,
+          );
         }
 
         return (
@@ -539,18 +628,27 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
         const deIndex = formatsArr.indexOf('double_elimination');
         const prevFormat = deIndex > 0 ? formatsArr[deIndex - 1] : null;
 
-        // Nếu vòng trước là 'group' và đã có matches → tính các đội đi tiếp
-        // từ kết quả vòng bảng để truyền sang double elim (giống single elim).
+        // Tính danh sách đội đi tiếp từ vòng trước (group hoặc swiss) — cùng
+        // logic với case single_elimination ở trên.
         let deQualifiedTeams: { id: string; name: string }[] | undefined;
-        if (prevFormat === 'group' && groupMatches.length > 0) {
-          const totalAdvancing = advSteps[deIndex - 1];
-          if (typeof totalAdvancing === 'number' && totalAdvancing > 0) {
-            deQualifiedTeams = computeQualifiedFromGroups(
-              groupMatches,
-              participantList,
-              totalAdvancing,
-            );
-          }
+        const deTotalAdvancing = advSteps[deIndex - 1];
+        const deValidTotal =
+          typeof deTotalAdvancing === 'number' && deTotalAdvancing > 0
+            ? deTotalAdvancing
+            : null;
+
+        if (prevFormat === 'group' && groupMatches.length > 0 && deValidTotal) {
+          deQualifiedTeams = computeQualifiedFromGroups(
+            groupMatches,
+            participantList,
+            deValidTotal,
+          );
+        } else if (prevFormat === 'swiss' && swissMatches.length > 0 && deValidTotal) {
+          deQualifiedTeams = computeQualifiedFromSwiss(
+            swissMatches,
+            participantList,
+            deValidTotal,
+          );
         }
 
         return (
@@ -568,14 +666,19 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
         );
       }
       
-      case 'swiss':
+      case 'swiss': {
+        const swissBestOf = getBestOfForFormat('swiss', 1);
         return (
-          <div className={styles.comingSoon}>
-            <div className={styles.comingSoonIcon}>⏳</div>
-            <h4>Đang phát triển</h4>
-            <p>Hệ thống Swiss sẽ sớm được cập nhật</p>
-          </div>
+          <SwissStageBracket
+            tournamentId={tournamentId}
+            participants={participantList}
+            maxParticipants={tournament.maxParticipants}
+            bestOf={swissBestOf}
+            isReadOnly={!isCreator}
+            startDate={tournament.startDate}
+          />
         );
+      }
       
       default:
         return null;

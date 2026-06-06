@@ -103,6 +103,13 @@ router.delete('/tournaments/:id/single-elim-matches/:matchId', authMiddleware, t
 router.get('/tournaments/:id/double-elim-matches', tournamentController.getDoubleEliminationMatches);
 router.put('/tournaments/:id/double-elim-matches/:matchId', authMiddleware, tournamentController.upsertDoubleEliminationMatch);
 router.delete('/tournaments/:id/double-elim-matches/:matchId', authMiddleware, tournamentController.deleteDoubleEliminationMatch);
+// Swiss match scores (lưu DB thay cho localStorage). API mirror với
+// single-elim-matches; FE truyền thêm "poolKey" ("w-l") và "round" để DB lưu
+// kèm. Sơ đồ pool được dựng động ở FE dựa trên maxParticipants + target wins/losses,
+// backend chỉ lưu / lấy theo cặp (tournament_id, match_id).
+router.get('/tournaments/:id/swiss-matches', tournamentController.getSwissMatches);
+router.put('/tournaments/:id/swiss-matches/:matchId', authMiddleware, tournamentController.upsertSwissMatch);
+router.delete('/tournaments/:id/swiss-matches/:matchId', authMiddleware, tournamentController.deleteSwissMatch);
 // GET /api/tournaments/:id/round-best-of
 router.get('/tournaments/:id/round-best-of', async (req, res) => {
   try {

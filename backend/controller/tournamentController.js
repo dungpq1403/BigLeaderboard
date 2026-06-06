@@ -5,6 +5,7 @@ const GroupMatch = require('../models/GroupMatch');
 const TournamentRoundBestOf = require('../models/TournamentRoundBestOf');
 const SingleEliminationMatch = require('../models/SingleEliminationMatch');
 const DoubleEliminationMatch = require('../models/DoubleEliminationMatch');
+const SwissMatch = require('../models/SwissMatch');
 const Registration = require('../models/Registration');
 const User = require('../models/User');
 const Game = require('../models/Game');
@@ -363,6 +364,7 @@ const tournamentController = {
       await GroupMatch.destroy({ where: { tournamentId: id } });
       await SingleEliminationMatch.destroy({ where: { tournamentId: id } });
       await DoubleEliminationMatch.destroy({ where: { tournamentId: id } });
+      await SwissMatch.destroy({ where: { tournamentId: id } });
       await TournamentRoundBestOf.destroy({ where: { tournamentId: id } });
       await tournament.destroy();
       
@@ -596,6 +598,13 @@ const tournamentController = {
       //    có scores là persisted trong DB.
       if (oldFormats.includes('double_elimination') && !newFormatsArr.includes('double_elimination')) {
         await DoubleEliminationMatch.destroy({ where: { tournamentId: tournament.id } });
+      }
+
+      // 4) Bỏ "Vòng Swiss" → xoá toàn bộ tỉ số đã lưu cho các trận Swiss. Sơ đồ
+      //    pool được dựng động từ maxParticipants + cấu hình mục tiêu thắng/thua
+      //    ở FE, nên chỉ có scores là persisted trong DB.
+      if (oldFormats.includes('swiss') && !newFormatsArr.includes('swiss')) {
+        await SwissMatch.destroy({ where: { tournamentId: tournament.id } });
       }
 
       if (roundBestOfs && Array.isArray(roundBestOfs) && roundBestOfs.length > 0) {
@@ -1172,6 +1181,192 @@ const tournamentController = {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to delete double elimination match.',
+        error: error.message,
+      });
+    }
+  },
+
+// GET /api/tournaments/:id/swiss-matches
+  // Trả về toàn bộ tỉ số / cấu hình BO đã lưu cho sơ đồ Swiss.
+  // Endpoint công khai (không cần đăng nhập) để khán giả cũng xem được bracket,
+  // đồng bộ hành vi với single-elim-matches và double-elim-matches.
+  async getSwissMatches(req, res) {
+    try {
+      const { id } = req.params;
+
+      const matches = await SwissMatch.findAll({
+        where: { tournamentId: id },
+        order: [['matchId', 'ASC']],
+      });
+
+      res.json({ matches });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to fetch swiss matches.',
+        error: error.message,
+      });
+    }
+  },
+
+  // PUT /api/tournaments/:id/swiss-matches/:matchId
+  // Body: { teamAScore, teamBScore, bestOf, teamAName?, teamBName?, poolKey?,
+  //         round?, invalidateMatchIds?: number[] }
+  // Upsert tỉ số cho 1 trận Swiss. Nếu winner đổi, FE truyền invalidateMatchIds
+  // để backend xoá toàn bộ downstream trong cùng 1 request (tránh race condition).
+  async upsertSwissMatch(req, res) {
+    try {
+      const { id, matchId } = req.params;
+      const {
+        teamAScore,
+        teamBScore,
+        bestOf,
+        teamAName,
+        teamBName,
+        poolKey,
+        round,
+        invalidateMatchIds,
+      } = req.body;
+
+      const tournament = await Tournament.findByPk(id);
+      if (!tournament) {
+        return res.status(404).json({ message: 'Tournament not found.' });
+      }
+      if (tournament.createdBy !== req.user.id) {
+        return res
+          .status(403)
+          .json({ message: 'You are not the creator of this tournament.' });
+      }
+
+      const safeA = Math.max(0, parseInt(teamAScore, 10) || 0);
+      const safeB = Math.max(0, parseInt(teamBScore, 10) || 0);
+      const safeBO = Math.max(1, parseInt(bestOf, 10) || 1);
+
+      const need = Math.ceil(safeBO / 2);
+      if (safeA > need || safeB > need) {
+        return res.status(400).json({
+          message: `Điểm không được vượt quá ${need} (BO${safeBO}).`,
+        });
+      }
+      if (safeA === need && safeB === need) {
+        return res
+          .status(400)
+          .json({ message: 'Cả 2 đội không thể cùng đạt mức thắng.' });
+      }
+
+      const numericMatchId = parseInt(matchId, 10);
+      if (!Number.isFinite(numericMatchId) || numericMatchId < 1) {
+        return res.status(400).json({ message: 'matchId không hợp lệ.' });
+      }
+
+      const winnerName = deriveBracketWinner(
+        safeA,
+        safeB,
+        safeBO,
+        teamAName,
+        teamBName
+      );
+      const isCompleted = winnerName !== null;
+
+      // poolKey chỉ chấp nhận định dạng "w-l" (2 số nguyên >= 0). Không match
+      // pattern thì lưu null để debug-log không bị nhiễu, KHÔNG block save.
+      const safePoolKey =
+        typeof poolKey === 'string' && /^\d+-\d+$/.test(poolKey) ? poolKey : null;
+      const safeRound =
+        Number.isFinite(Number(round)) && Number(round) > 0
+          ? parseInt(round, 10)
+          : null;
+
+      const [row] = await SwissMatch.findOrCreate({
+        where: { tournamentId: id, matchId: numericMatchId },
+        defaults: {
+          tournamentId: id,
+          matchId: numericMatchId,
+          poolKey: safePoolKey,
+          round: safeRound,
+          teamAName: teamAName || null,
+          teamBName: teamBName || null,
+          teamAScore: safeA,
+          teamBScore: safeB,
+          bestOf: safeBO,
+          winnerName,
+          isCompleted,
+          completedAt: isCompleted ? new Date() : null,
+        },
+      });
+
+      row.poolKey = safePoolKey || row.poolKey;
+      row.round = safeRound || row.round;
+      row.teamAName = teamAName || null;
+      row.teamBName = teamBName || null;
+      row.teamAScore = safeA;
+      row.teamBScore = safeB;
+      row.bestOf = safeBO;
+      row.winnerName = winnerName;
+      row.isCompleted = isCompleted;
+      row.completedAt = isCompleted ? row.completedAt || new Date() : null;
+      await row.save();
+
+      // Cascade xoá downstream nếu FE chỉ định (winner đổi → các trận sau không
+      // còn ý nghĩa vì luồng winners/losers đã thay đổi, FE tính sẵn danh sách).
+      if (Array.isArray(invalidateMatchIds) && invalidateMatchIds.length > 0) {
+        const ids = invalidateMatchIds
+          .map((n) => parseInt(n, 10))
+          .filter((n) => Number.isFinite(n) && n !== numericMatchId);
+        if (ids.length > 0) {
+          await SwissMatch.destroy({
+            where: { tournamentId: id, matchId: ids },
+          });
+        }
+      }
+
+      res.json({ message: 'Match saved.', match: row });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to save swiss match.',
+        error: error.message,
+      });
+    }
+  },
+
+  // DELETE /api/tournaments/:id/swiss-matches/:matchId
+  // Body: { invalidateMatchIds?: number[] }
+  // Xoá kết quả 1 trận Swiss + toàn bộ downstream do FE chỉ định.
+  async deleteSwissMatch(req, res) {
+    try {
+      const { id, matchId } = req.params;
+      const { invalidateMatchIds } = req.body || {};
+
+      const tournament = await Tournament.findByPk(id);
+      if (!tournament) {
+        return res.status(404).json({ message: 'Tournament not found.' });
+      }
+      if (tournament.createdBy !== req.user.id) {
+        return res
+          .status(403)
+          .json({ message: 'You are not the creator of this tournament.' });
+      }
+
+      const numericMatchId = parseInt(matchId, 10);
+      if (!Number.isFinite(numericMatchId) || numericMatchId < 1) {
+        return res.status(400).json({ message: 'matchId không hợp lệ.' });
+      }
+
+      const idsToDelete = new Set([numericMatchId]);
+      if (Array.isArray(invalidateMatchIds)) {
+        invalidateMatchIds.forEach((n) => {
+          const v = parseInt(n, 10);
+          if (Number.isFinite(v)) idsToDelete.add(v);
+        });
+      }
+
+      const deletedCount = await SwissMatch.destroy({
+        where: { tournamentId: id, matchId: Array.from(idsToDelete) },
+      });
+
+      res.json({ message: 'Match deleted.', deletedCount });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to delete swiss match.',
         error: error.message,
       });
     }

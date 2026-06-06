@@ -325,6 +325,9 @@ export default function EditTournamentForm({ tournament, onSuccess, onCancel }: 
               formatNames={FORMAT_NAMES}
               value={advancementSteps}
               onChange={setAdvancementSteps}
+              maxParticipants={
+                formData.maxParticipants ? parseInt(formData.maxParticipants) : null
+              }
             />
           )}
           {errors.advancementSteps && <span className={styles.errorText}>{errors.advancementSteps}</span>}

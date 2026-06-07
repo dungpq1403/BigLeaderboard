@@ -9,7 +9,7 @@ import styles from './DeleteTournamentButton.module.css';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface DeleteTournamentButtonProps {
-  tournamentId: number;
+  tournamentId: string;
   tournamentName: string;
   onDelete?: () => void;
   variant?: 'button' | 'icon';

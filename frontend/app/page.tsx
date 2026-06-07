@@ -14,7 +14,7 @@ const SCROLL_STEP = 233
 const SCROLL_DURATION = 450;
 
 interface Game {
-  id: number;
+  id: string;
   name: string;
   slug: string;
   icon: string;

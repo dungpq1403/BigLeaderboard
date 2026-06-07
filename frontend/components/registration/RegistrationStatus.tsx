@@ -8,9 +8,9 @@ import styles from './RegistrationStatus.module.css';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface RegistrationStatusProps {
-  tournamentId: number;
-  tournamentCreatorId?: number; // Thêm để kiểm tra nếu user là host thì không hiển thị
-  currentUserId?: number;
+  tournamentId: string;
+  tournamentCreatorId?: string; // Thêm để kiểm tra nếu user là host thì không hiển thị
+  currentUserId?: string;
   variant?: 'badge' | 'text' | 'button';
   onStatusChange?: () => void; // Callback khi status thay đổi
 }

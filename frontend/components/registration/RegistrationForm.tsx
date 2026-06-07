@@ -12,8 +12,8 @@ import { useFormat } from '@/context/FormatContext';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface Tournament {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -23,11 +23,11 @@ interface Tournament {
   prize: number;
   description: string;
   imageUrl: string;
-  createdBy: number;
+  createdBy: string;
   teamMembers?: number;
   teamSubstitutes?: number;
   creator?: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
   };
@@ -35,7 +35,7 @@ interface Tournament {
 
 interface RegistrationFormProps {
   tournament: Tournament;
-  userId: number;
+  userId: string;
   onSuccess?: () => void;
   onCancel?: () => void;
 }

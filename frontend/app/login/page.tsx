@@ -11,7 +11,7 @@ import { apiFetch, ApiError } from "@/lib/api";
 type LoginResponse = {
   token: string;
   user: {
-    id: number;
+    id: string;
     username: string;
     email: string;
     fullName: string;

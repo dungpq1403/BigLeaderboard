@@ -8,8 +8,8 @@ import { toast } from 'react-toastify';
 import { apiFetch } from '@/lib/api';
 
 interface Tournament {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -19,9 +19,9 @@ interface Tournament {
   prize: number;
   description: string;
   imageUrl: string;
-  createdBy: number;
+  createdBy: string;
   creator?: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
   };
@@ -33,9 +33,9 @@ interface RegisterPageProps {
 
 export default function RegisterPage({ params }: RegisterPageProps) {
   const router = useRouter();
-  const { id: idParam } = use(params);
-  const tournamentId = Number(idParam);
-  const [userId, setUserId] = useState<number | null>(null);
+  // tournamentId là chuỗi hash Sqids.
+  const { id: tournamentId } = use(params);
+  const [userId, setUserId] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   // Auth gate: chuyển hướng login nếu chưa đăng nhập.
@@ -64,7 +64,7 @@ export default function RegisterPage({ params }: RegisterPageProps) {
     queryKey: ['tournaments', tournamentId],
     queryFn: ({ signal }) =>
       apiFetch<Tournament>(`/tournaments/${tournamentId}`, { signal }),
-    enabled: authChecked && Number.isFinite(tournamentId),
+    enabled: authChecked && Boolean(tournamentId),
   });
 
   // Khi query lỗi (vd. 404) → redirect home và toast.

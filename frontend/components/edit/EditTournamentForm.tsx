@@ -24,8 +24,8 @@ const FORMAT_NAMES: Record<string, string> = {
 };
 
 interface TournamentData {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;

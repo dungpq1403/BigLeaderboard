@@ -54,7 +54,7 @@ interface PoolDef {
 }
 
 interface SwissStageBracketProps {
-  tournamentId: number;
+  tournamentId: string;
   participants: Participant[];
   // Số đội tối đa giải đấu cho phép. Sơ đồ Swiss được dựng dựa trên giá trị
   // này để FE hiển thị TOÀN BỘ cặp đấu tiềm năng từ trước khi đủ đội đăng ký.
@@ -82,10 +82,19 @@ const BO_OPTIONS: { value: number; label: string }[] = [
 
 const POOL_WIDTH = 240;
 const POOL_X_STEP = 320;   // khoảng cách ngang giữa 2 cột pool
-const POOL_Y_STEP = 160;   // mỗi đơn vị (l - w) tương ứng bao nhiêu px theo trục Y
 const POOL_VPAD = 60;      // padding trên/dưới canvas để tránh clip box
-const MATCH_ROW_H = 44;    // chiều cao ước lượng của 1 match row trong pool box
-const POOL_HEADER_H = 50;  // header + padding của pool box
+const POOL_V_GAP = 40;     // khoảng cách dọc giữa 2 pool kề nhau trong cùng 1 cột
+// Chiều cao ước lượng (upper bound) cho 1 match card trong pool. Match card
+// gồm 2 teamRow (font 0.78rem + padding 0.35rem) + border 2px ≈ 57px; +4.8px
+// gap với card kế tiếp → ~62px. Để safe ta dùng 64 để tránh bị underestimate.
+const MATCH_ROW_H = 64;
+// Header + padding poolMatches + 2 border của poolBox. Header ~29px, padding
+// trên+dưới của poolMatches 11.2px, border 4px → ~45px; cộng buffer cho gap
+// cuối card không bị tính trong matchCount * MATCH_ROW_H ≈ 60.
+const POOL_HEADER_H = 60;
+const STATUS_ROW_H = 26;   // chiều cao ước lượng cho 1 hàng team trong status box
+const STATUS_MIN_H = 100;  // chiều cao tối thiểu của status box (đồng bộ với CSS)
+const POOL_MIN_H = 90;     // chiều cao tối thiểu của pool box (đề phòng matchCount=0)
 
 function hasAuthSession(): boolean {
   if (typeof window === 'undefined') return false;
@@ -380,69 +389,102 @@ export default function SwissStageBracket({
     const sizes = computePoolSizes(bracketSize, targetWins, targetLosses);
     const metas = enumeratePoolMetas(targetWins, targetLosses);
 
-    // Tính baseY dynamically: pool to nhất ((0,0)) phải vừa trong canvas, và
-    // pool xa nhất phía trên (vd: (targetWins, 0)) cũng phải không bị clip.
-    const rootSize = sizes.get('0-0') || 0;
-    const rootMatchCount = Math.floor(rootSize / 2);
-    const rootHeight = Math.max(120, rootMatchCount * MATCH_ROW_H + POOL_HEADER_H);
+    // ---- 1. Enrich metas: gắn size + chiều cao box ước lượng cho từng pool.
+    //   Pool playable: chiều cao tỉ lệ với số trận (matchCount * row + header).
+    //   Status box  : tỉ lệ với số đội tối đa sẽ vào (teamCount * row + header).
+    // Cả hai đều có sàn (min height) để box ngắn không bị mỏng dẹt.
+    const enriched = metas.map((meta) => {
+      const key = `${meta.w}-${meta.l}`;
+      const teamCount = sizes.get(key) || 0;
+      const matchCount = meta.isPlayable ? Math.floor(teamCount / 2) : 0;
+      const height = meta.isPlayable
+        ? Math.max(POOL_MIN_H, matchCount * MATCH_ROW_H + POOL_HEADER_H)
+        : Math.max(STATUS_MIN_H, teamCount * STATUS_ROW_H + POOL_HEADER_H);
+      return { ...meta, key, teamCount, matchCount, height };
+    });
 
-    // (targetWins, 0) ở y = baseY - targetWins * POOL_Y_STEP. Cần đảm bảo
-    // status box này không bị âm (clip trên đầu) → baseY >= targetWins*step + halfRootHeight + pad.
-    const baseY =
-      targetWins * POOL_Y_STEP + rootHeight / 2 + POOL_VPAD;
+    // ---- 2. Group theo cột (col = w + l) để layout từng cột độc lập.
+    // Sort trong cột theo (l - w) tăng dần → winner-leaning trên, loser-leaning dưới.
+    const byColumn = new Map<number, typeof enriched>();
+    enriched.forEach((m) => {
+      const col = m.w + m.l;
+      const arr = byColumn.get(col);
+      if (arr) arr.push(m);
+      else byColumn.set(col, [m]);
+    });
+    byColumn.forEach((arr) => arr.sort((a, b) => a.l - a.w - (b.l - b.w)));
 
+    // ---- 3. Cột cao nhất quyết định chiều cao canvas. Mỗi cột là 1 stack dọc:
+    //   total = sum(heights) + (n - 1) * V_GAP. centerY chung cho toàn canvas
+    //   để các cột đều cân giữa quanh trục ngang → dễ nhìn + đối xứng winner/loser.
+    let maxColHeight = 0;
+    byColumn.forEach((arr) => {
+      const total =
+        arr.reduce((s, m) => s + m.height, 0) +
+        Math.max(0, arr.length - 1) * POOL_V_GAP;
+      if (total > maxColHeight) maxColHeight = total;
+    });
+
+    const maxCol =
+      enriched.length > 0 ? Math.max(...enriched.map((m) => m.w + m.l)) : 0;
+    const width = (maxCol + 1) * POOL_X_STEP + 80;
+    const height = maxColHeight + 2 * POOL_VPAD;
+    const centerY = height / 2;
+
+    // ---- 4. Tính Y cho từng pool: lay out tuần tự từ trên xuống trong mỗi cột,
+    //   sao cho toàn bộ stack center vào `centerY`. y lưu trong PoolDef là TÂM
+    //   box (CSS dùng translateY(-50%)).
+    const yByKey = new Map<string, number>();
+    byColumn.forEach((arr) => {
+      const total =
+        arr.reduce((s, m) => s + m.height, 0) +
+        Math.max(0, arr.length - 1) * POOL_V_GAP;
+      let topY = centerY - total / 2;
+      arr.forEach((m) => {
+        yByKey.set(m.key, topY + m.height / 2);
+        topY += m.height + POOL_V_GAP;
+      });
+    });
+
+    // ---- 5. Dựng poolDefs + matchDefs theo thứ tự `metas` (depth↑, w↓) để
+    //   matchId giữ tính deterministic — KHÔNG dùng thứ tự byColumn (đã sort
+    //   theo (l - w)) vì nó sẽ shuffle matchId mỗi lần đổi targetWins/Losses.
     const defs: PoolDef[] = [];
     const mDefs: SwissMatchDef[] = [];
     let nextMatchId = 1;
 
-    metas.forEach((meta) => {
-      const key = `${meta.w}-${meta.l}`;
-      const teamCount = sizes.get(key) || 0;
-      const matchCount = meta.isPlayable ? Math.floor(teamCount / 2) : 0;
+    enriched.forEach((m) => {
       const matchIds: number[] = [];
-      for (let i = 0; i < matchCount; i++) {
+      for (let i = 0; i < m.matchCount; i++) {
         const mid = nextMatchId++;
         matchIds.push(mid);
         mDefs.push({
           id: mid,
-          poolKey: key,
+          poolKey: m.key,
           indexInPool: i,
-          round: meta.w + meta.l + 1,
-          w: meta.w,
-          l: meta.l,
+          round: m.w + m.l + 1,
+          w: m.w,
+          l: m.l,
         });
       }
-
-      const col = meta.w + meta.l;
-      // y dùng (l - w) làm trục: winner-leaning ở trên (l-w âm), loser-leaning
-      // ở dưới (l-w dương). Cách này đảm bảo các status box (3,0), (3,1)... và
-      // (0,3), (1,3)... được spread đủ xa, đồng thời pool nằm chính giữa cha.
-      const yOffset = (meta.l - meta.w) * POOL_Y_STEP;
       defs.push({
-        w: meta.w,
-        l: meta.l,
-        key,
-        round: meta.w + meta.l + 1,
-        teamCount,
-        matchCount,
+        w: m.w,
+        l: m.l,
+        key: m.key,
+        round: m.w + m.l + 1,
+        teamCount: m.teamCount,
+        matchCount: m.matchCount,
         matchIds,
-        isPlayable: meta.isPlayable,
-        isAdvanced: meta.isAdvanced,
-        isEliminated: meta.isEliminated,
-        x: col * POOL_X_STEP,
-        y: baseY + yOffset,
+        isPlayable: m.isPlayable,
+        isAdvanced: m.isAdvanced,
+        isEliminated: m.isEliminated,
+        x: (m.w + m.l) * POOL_X_STEP,
+        y: yByKey.get(m.key) ?? centerY,
       });
     });
 
     const byKey = new Map<string, PoolDef>();
     defs.forEach((p) => byKey.set(p.key, p));
-
-    const maxCol = defs.length > 0 ? Math.max(...defs.map((p) => p.w + p.l)) : 0;
-    const maxY = defs.length > 0 ? Math.max(...defs.map((p) => p.y)) : 0;
-    const width = (maxCol + 1) * POOL_X_STEP + 80;
-    // canvasHeight cần chứa pool xa nhất phía dưới (vd: (0, targetLosses) hoặc
-    // (0, 0) khi root pool to). Lấy max giữa: cuối pool (0, 0) và cuối pool (0, targetLosses).
-    const height = Math.max(maxY + rootHeight / 2 + POOL_VPAD, baseY * 2);
 
     return {
       poolDefs: defs,
@@ -940,6 +982,17 @@ export default function SwissStageBracket({
             r?.team2 ?? null,
           );
           const hasExisting = !!matchScores[editingMatchId];
+          // Phân loại lỗi tỉ số để hiển thị inline & disable nút lưu. Toast
+          // dùng cho tình huống lúc submit sẽ bị che bởi modal overlay (z-index
+          // của react-toastify thấp hơn), nên ta block trực tiếp ở UI: nếu
+          // scoreError ≠ null → nút Lưu disabled + show warning inline.
+          const tieAtThreshold = formTeamA === need && formTeamB === need;
+          const overLimit = formTeamA > need || formTeamB > need;
+          const scoreError = tieAtThreshold
+            ? `Cả 2 đội không thể cùng đạt ${need} trận thắng.`
+            : overLimit
+            ? `Điểm không được vượt quá ${need} (BO${formBestOf}).`
+            : null;
 
           return createPortal(
             <div className={styles.modalOverlay} onClick={closeEditModal}>
@@ -1025,7 +1078,11 @@ export default function SwissStageBracket({
                   </div>
 
                   <div className={styles.modalSection}>
-                    {previewWinner ? (
+                    {scoreError ? (
+                      <div className={styles.previewInvalid}>
+                        ⚠️ {scoreError}
+                      </div>
+                    ) : previewWinner ? (
                       <div className={styles.previewWinner}>
                         ✅ Đội thắng: <strong>{previewWinner}</strong>
                       </div>
@@ -1062,7 +1119,8 @@ export default function SwissStageBracket({
                       type="button"
                       className={styles.confirmBtn}
                       onClick={confirmEditModal}
-                      disabled={saving}
+                      disabled={saving || scoreError !== null}
+                      title={scoreError || undefined}
                     >
                       {saving ? 'Đang lưu...' : '✓ Lưu'}
                     </button>

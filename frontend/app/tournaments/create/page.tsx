@@ -189,8 +189,8 @@ export default function CreateTournamentPage() {
     onSuccess: () => {
       toast.success('Tạo giải đấu thành công!');
       // Invalidate list giải đấu của game này để khi user quay lại trang
-      // /game/:id thấy ngay giải mới.
-      queryClient.invalidateQueries({ queryKey: ['games', Number(gameId), 'tournaments'] });
+      // /game/:id thấy ngay giải mới. gameId là chuỗi hash, dùng nguyên.
+      queryClient.invalidateQueries({ queryKey: ['games', gameId, 'tournaments'] });
       router.push(`/game/${gameId}`);
     },
     onError: (err) => {
@@ -224,7 +224,7 @@ export default function CreateTournamentPage() {
       prize: parseFloat(formData.prize) || 0,
       description: formData.description,
       imageUrl: formData.imageUrl,
-      gameId: parseInt(gameId),
+      gameId,
       contacts: contacts.filter((c) => c.contact.trim() !== ''),
       advancementSteps:
         formatOrder.length > 1

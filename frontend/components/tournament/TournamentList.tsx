@@ -5,15 +5,19 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './TournamentList.module.css';
 import TournamentStatus from './TournamentStatus';
+import TournamentStats from './TournamentStats';
 import RegistrationStatus from '@/components/registration/RegistrationStatus';
 import TournamentCreator from './TournamentCreator';
 import DeleteTournamentButton from './DeleteTournamentButton';
+import Pagination from '@/components/pagination/Pagination';
 import { useFormat } from '@/context/FormatContext';
 import { apiFetch } from '@/lib/api';
 
+const PAGE_SIZE = 10;
+
 type Tournament = {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -23,26 +27,27 @@ type Tournament = {
   prize: number;
   description: string;
   imageUrl: string;
-  createdBy: number;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
 };
 
 type User = {
-  id: number;
+  id: string;
   username: string;
   fullName: string;
 };
 
 interface TournamentListProps {
-  gameId: number;
+  gameId: string;
 }
 
 export default function TournamentList({ gameId }: TournamentListProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { getFormatName, getFormatIcon } = useFormat();
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // currentUserId chỉ đọc 1 lần lúc mount; không phải server state nên không
   // bỏ vào useQuery. Sau khi có authStore (Zustand) sẽ thay bằng selector.
@@ -77,7 +82,7 @@ export default function TournamentList({ gameId }: TournamentListProps) {
     [tournaments]
   );
 
-  const { data: users = {} } = useQuery<Record<number, User>>({
+  const { data: users = {} } = useQuery<Record<string, User>>({
     queryKey: ['users', 'byIds', userIds],
     enabled: userIds.length > 0,
     queryFn: async ({ signal }) => {
@@ -92,7 +97,7 @@ export default function TournamentList({ gameId }: TournamentListProps) {
           return u;
         })
       );
-      const map: Record<number, User> = {};
+      const map: Record<string, User> = {};
       results.forEach((u) => {
         if (u?.id) map[u.id] = u;
       });
@@ -100,7 +105,32 @@ export default function TournamentList({ gameId }: TournamentListProps) {
     },
   });
 
-  const handleCardClick = (tournamentId: number) => {
+  // Chỉ phụ thuộc length: tournaments là array mới mỗi lần fetch nhưng số
+  // trang chỉ đổi khi count đổi → tránh tính lại không cần thiết.
+  const totalPages = Math.max(1, Math.ceil(tournaments.length / PAGE_SIZE));
+
+  // Nếu currentPage > totalPages (vd. sau khi xóa tournament làm giảm số
+  // trang), clamp về trang cuối. Đặt trong effect để tránh setState khi render.
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const pagedTournaments = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return tournaments.slice(start, start + PAGE_SIZE);
+  }, [tournaments, currentPage]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    // Cuộn về đầu list khi đổi trang để user thấy ngay items mới.
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleCardClick = (tournamentId: string) => {
     router.push(`/tournaments/${tournamentId}`);
   };
 
@@ -129,8 +159,12 @@ export default function TournamentList({ gameId }: TournamentListProps) {
   }
 
   return (
-    <div className={styles.tournamentGrid}>
-      {tournaments.map((tournament) => {
+    <>
+      {/* Stats luôn tính trên toàn bộ tournaments (không paged) → người dùng
+          thấy tổng quan giải đấu của game bất kể đang ở trang nào. */}
+      <TournamentStats tournaments={tournaments} />
+      <div className={styles.tournamentGrid}>
+        {pagedTournaments.map((tournament) => {
         const isCreator = currentUserId === tournament.createdBy;
         
         return (
@@ -209,6 +243,14 @@ export default function TournamentList({ gameId }: TournamentListProps) {
           </div>
         );
       })}
-    </div>
+      </div>
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        totalItems={tournaments.length}
+        pageSize={PAGE_SIZE}
+      />
+    </>
   );
 }

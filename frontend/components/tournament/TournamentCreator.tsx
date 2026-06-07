@@ -4,7 +4,7 @@ import Link from 'next/link';
 import styles from './TournamentCreator.module.css';
 
 interface TournamentCreatorProps {
-  userId: number;
+  userId: string;
   username: string;
   fullName?: string;
   avatar?: string;

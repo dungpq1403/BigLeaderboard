@@ -15,14 +15,14 @@ import { apiFetch, ApiError } from "@/lib/api";
 const SEARCH_DEBOUNCE_MS = 300;
 
 type AuthUser = {
-  id: number;
+  id: string;
   username: string;
   fullName: string;
 };
 
 type TournamentSearchResult = {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -32,12 +32,12 @@ type TournamentSearchResult = {
   prize: number;
   imageUrl: string;
   creator: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
   };
   game: {
-    id: number;
+    id: string;
     name: string;
     slug: string;
     icon: string | null;
@@ -191,7 +191,7 @@ export default function TopBar() {
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
 
-  const handleSelectTournament = (tournamentId: number) => {
+  const handleSelectTournament = (tournamentId: string) => {
     setSearchQuery("");
     setShowSearchResults(false);
     router.push(`/tournaments/${tournamentId}`);
@@ -205,7 +205,7 @@ export default function TopBar() {
     router.push("/login");
   };
 
-  const handleProfile = (profileId: number) => {
+  const handleProfile = (profileId: string) => {
     setShowDropdown(false);
     router.push(`/profile/${profileId}`);
   };
@@ -283,7 +283,7 @@ export default function TopBar() {
                       </span>
                     )}
                     <TournamentCreator 
-                      userId={tournament.creator?.id || 0}
+                      userId={tournament.creator?.id || ''}
                       username={tournament.creator?.username || 'Unknown'}
                       fullName={tournament.creator?.fullName}
                       showFullName={true}

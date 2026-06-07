@@ -10,9 +10,9 @@ import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 
 interface Participant {
-  id: number;
-  tournamentId: number;
-  userId: number;
+  id: string;
+  tournamentId: string;
+  userId: string;
   participantType: string;
   // Cá nhân
   fullName?: string;
@@ -41,7 +41,7 @@ interface Participant {
 }
 
 interface Tournament {
-  id: number;
+  id: string;
   name: string;
   participantType: string;
   teamMembers?: number;
@@ -52,15 +52,15 @@ interface ParticipantsPageProps {
   params: Promise<{ id: string }>;
 }
 
-type TournamentWithCreator = Tournament & { createdBy: number };
+type TournamentWithCreator = Tournament & { createdBy: string };
 
 export default function ParticipantsPage({ params }: ParticipantsPageProps) {
   const router = useRouter();
-  const { id: idParam } = use(params);
-  const tournamentId = Number(idParam);
+  // tournamentId là chuỗi hash Sqids.
+  const { id: tournamentId } = use(params);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   // Đọc session một lần. Nếu chưa đăng nhập → redirect login. Tách logic
@@ -90,7 +90,7 @@ export default function ParticipantsPage({ params }: ParticipantsPageProps) {
         signal,
         auth: false,
       }),
-    enabled: authChecked && Number.isFinite(tournamentId),
+    enabled: authChecked && Boolean(tournamentId),
   });
 
   const isCreator = !!(tournament && currentUserId && tournament.createdBy === currentUserId);

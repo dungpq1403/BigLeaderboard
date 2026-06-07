@@ -14,7 +14,7 @@ import { calculateGroupStageStats, Match as ScoringMatch } from '@/utils/GroupSt
 import { apiFetch } from '@/lib/api';
 
 interface Tournament {
-  id: number;
+  id: string;
   name: string;
   formats: string[];
   participantType: string;
@@ -26,13 +26,13 @@ interface Tournament {
 }
 
 interface BracketManagerProps {
-  tournamentId: number;
+  tournamentId: string;
   tournament: Tournament;
   isCreator?: boolean;
 }
 
 interface RoundBestOf {
-  id: number;
+  id: string;
   roundNumber: number;
   formatType: string;
   bestOf: number;
@@ -89,9 +89,9 @@ function normalizeFormatOrder(formats: string[]): BracketType[] {
   return result;
 }
 
-const getStorageKey = (tournamentId: number) => `bracket_active_${tournamentId}`;
-const getGroupsCountKey = (tournamentId: number) => `bracket_groups_${tournamentId}`;
-const getBracketCreatedKey = (tournamentId: number) => `bracket_created_${tournamentId}`;
+const getStorageKey = (tournamentId: string) => `bracket_active_${tournamentId}`;
+const getGroupsCountKey = (tournamentId: string) => `bracket_groups_${tournamentId}`;
+const getBracketCreatedKey = (tournamentId: string) => `bracket_created_${tournamentId}`;
 
 // Tính danh sách đội đi tiếp từ vòng bảng dựa trên xếp hạng hiện tại.
 // - Gộp matches theo groupId
@@ -281,7 +281,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
         signal,
         auth: false,
       }),
-    enabled: isClient && Number.isFinite(tournamentId),
+    enabled: isClient && Boolean(tournamentId),
   });
 
   const participantList = (bracketData?.participants ?? []).map((p) => ({
@@ -301,7 +301,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
         signal,
         auth: false,
       }),
-    enabled: isClient && Number.isFinite(tournamentId) && hasSwissFormat,
+    enabled: isClient && Boolean(tournamentId) && hasSwissFormat,
   });
   const swissMatches = Array.isArray(swissData?.matches) ? (swissData!.matches as any[]) : [];
 

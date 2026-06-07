@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import styles from './CreateTournamentButton.module.css';
 
 interface CreateTournamentButtonProps {
-  gameId: number;
+  gameId: string;
   className?: string;
   variant?: 'primary' | 'secondary' | 'outline';
   size?: 'small' | 'medium' | 'large';

@@ -18,8 +18,8 @@ import BracketManager from '@/components/brackets/BracketManager';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface TournamentDetail {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -29,11 +29,11 @@ interface TournamentDetail {
   prize: number;
   description: string;
   imageUrl: string;
-  createdBy: number;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
   creator?: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
   };
@@ -45,14 +45,14 @@ interface TournamentDetail {
 }
 
 interface Contact {
-  id: number;
-  tournamentId: number;
+  id: string;
+  tournamentId: string;
   platform: string;
   contact: string;
 }
 
 interface RoundBestOf {
-  tournamentId: number;
+  tournamentId: string;
   roundNumber: number;
   formatType: string;
   bestOf: number;
@@ -67,14 +67,15 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
   const queryClient = useQueryClient();
   const { getFormatName, getFormatIcon } = useFormat();
   // Next.js 16 params là Promise → unwrap đồng bộ bằng React.use().
-  const { id: idParam } = use(params);
-  const tournamentId = Number(idParam);
+  // tournamentId là chuỗi hash Sqids (vd. "x7F9aB"), KHÔNG parse sang số.
+  const { id: tournamentId } = use(params);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Lấy currentUserId từ localStorage (sẽ thay bằng auth store sau).
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  // Lấy currentUserId từ localStorage (sẽ thay bằng auth store sau). User id
+  // được lưu khi đăng nhập đã là chuỗi hash do encoder backend trả về.
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   useEffect(() => {
     setMounted(true);
     try {
@@ -105,7 +106,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
         throw err;
       }
     },
-    enabled: Number.isFinite(tournamentId),
+    enabled: Boolean(tournamentId),
   });
 
   // Contacts + roundBestOf — không phụ thuộc auth, fetch song song với tournament.
@@ -113,7 +114,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
     queryKey: ['tournaments', tournamentId, 'contacts'],
     queryFn: ({ signal }) =>
       apiFetch<Contact[]>(`/tournaments/${tournamentId}/contacts`, { signal, auth: false }),
-    enabled: Number.isFinite(tournamentId),
+    enabled: Boolean(tournamentId),
     select: (d) => (Array.isArray(d) ? d : []),
   });
 
@@ -124,7 +125,7 @@ export default function TournamentDetailPage({ params }: TournamentDetailPagePro
         signal,
         auth: false,
       }),
-    enabled: Number.isFinite(tournamentId),
+    enabled: Boolean(tournamentId),
     select: (d) => (Array.isArray(d) ? d : []),
   });
 

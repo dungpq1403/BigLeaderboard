@@ -1,9 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
+const { attachIdParamDecoders } = require('../middleware/idHash');
 const gameController = require('../controller/gameController');
 const gameProfileController = require('../controller/gameProfileController');
 const enkaController = require('../controller/enkaController');
+
+// Auto-decode URL param dạng hash (id/tournamentId/gameId/userId) sang số nguyên
+// trước khi vào controller. Param "avatarId" (enka) là id của HoYoverse, không
+// đi qua decoder vì không nằm trong DECODE_PARAMS.
+attachIdParamDecoders(router);
 
 // Game routes (duplicate of api.js — kept for enka route module consumers)
 router.get('/games', gameController.getAllGames);

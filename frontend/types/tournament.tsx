@@ -1,7 +1,10 @@
 // types/tournament.ts
+// LƯU Ý: id / gameId / createdBy / creator.id giờ là CHUỖI hash (Sqids) do backend
+// trả về (vd. "x7F9aB") thay vì số tự tăng. Frontend treat như opaque string;
+// không bao giờ parse thành number.
 export type Tournament = {
-    id: number;
-    gameId: number;
+    id: string;
+    gameId: string;
     name: string;
     formats: string[];
     startDate: string;
@@ -11,9 +14,9 @@ export type Tournament = {
     prize: number;
     description: string;
     imageUrl: string;
-    createdBy: number;
+    createdBy: string;
     creator?: {
-      id: number;
+      id: string;
       username: string;
       fullName: string;
     };

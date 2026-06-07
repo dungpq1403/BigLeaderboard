@@ -35,7 +35,7 @@ export default function TeamDetails({ teamName, members, substitutes }: TeamDeta
   // email khác). Seed cache user theo id sau khi lấy được.
   const lookupMutation = useMutation({
     mutationFn: (email: string) =>
-      apiFetch<{ id: number; email: string }>(`/users/email/${email}`),
+      apiFetch<{ id: string; email: string }>(`/users/email/${email}`),
     onSuccess: (data) => {
       if (data?.id) {
         // Seed cache users theo id để khi navigate vào profile page khỏi

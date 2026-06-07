@@ -71,7 +71,7 @@ interface Participant {
 }
 
 interface DoubleEliminationBracketProps {
-  tournamentId: number;
+  tournamentId: string;
   participants: Participant[];
   // Đội đã đi tiếp từ vòng trước (vd: top K của vòng bảng).
   // Khi prop này có giá trị → dùng làm slot thật cho WB R1 thay vì placeholder.
@@ -131,8 +131,8 @@ function hasAuthSession(): boolean {
 // Key localStorage CŨ — chỉ dùng để DỌN sạch state legacy khi user mở trang
 // phiên bản mới. Lưu ý: không đọc / không ghi lại; chỉ xoá để tránh đọc nhầm
 // dữ liệu cũ ở các tab cùng tournamentId, đồng thời giải phóng quota.
-const LEGACY_SCORES_KEY = (tournamentId: number) => `double_elim_scores_${tournamentId}`;
-const LEGACY_WINNERS_KEY = (tournamentId: number) => `double_elim_winners_${tournamentId}`;
+const LEGACY_SCORES_KEY = (tournamentId: string) => `double_elim_scores_${tournamentId}`;
+const LEGACY_WINNERS_KEY = (tournamentId: string) => `double_elim_winners_${tournamentId}`;
 
 // Sinh thứ tự "seed" cho 1 bracket size là luỹ thừa của 2.
 // VD size=8 → [1,8,5,4,3,6,7,2] (cách ghép cặp chuẩn cho giải đấu).
@@ -1264,6 +1264,17 @@ export default function DoubleEliminationBracket({
             tree.team2.name,
           );
           const hasExisting = !!matchScores[editingMatchId];
+          // Phân loại lỗi tỉ số để hiển thị inline & disable nút lưu. Toast
+          // dùng cho tình huống lúc submit sẽ bị che bởi modal overlay (z-index
+          // của react-toastify thấp hơn), nên ta block trực tiếp ở UI: nếu
+          // scoreError ≠ null → nút Lưu disabled + show warning inline.
+          const tieAtThreshold = formTeamA === need && formTeamB === need;
+          const overLimit = formTeamA > need || formTeamB > need;
+          const scoreError = tieAtThreshold
+            ? `Cả 2 đội không thể cùng đạt ${need} trận thắng.`
+            : overLimit
+            ? `Điểm không được vượt quá ${need} (BO${formBestOf}).`
+            : null;
 
           return createPortal(
             <div className={styles.modalOverlay} onClick={closeEditModal}>
@@ -1348,7 +1359,11 @@ export default function DoubleEliminationBracket({
                   </div>
 
                   <div className={styles.modalSection}>
-                    {previewWinner ? (
+                    {scoreError ? (
+                      <div className={styles.previewInvalid}>
+                        ⚠️ {scoreError}
+                      </div>
+                    ) : previewWinner ? (
                       <div className={styles.previewWinner}>
                         ✅ Đội thắng: <strong>{previewWinner}</strong>
                       </div>
@@ -1385,7 +1400,8 @@ export default function DoubleEliminationBracket({
                       type="button"
                       className={styles.confirmBtn}
                       onClick={confirmEditModal}
-                      disabled={saving}
+                      disabled={saving || scoreError !== null}
+                      title={scoreError || undefined}
                     >
                       {saving ? 'Đang lưu...' : '✓ Lưu'}
                     </button>

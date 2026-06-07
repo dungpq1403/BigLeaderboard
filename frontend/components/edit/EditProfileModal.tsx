@@ -11,7 +11,7 @@ interface EditProfileModalProps {
   onClose: () => void;
   onSuccess: () => void;
   user: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
     email: string;

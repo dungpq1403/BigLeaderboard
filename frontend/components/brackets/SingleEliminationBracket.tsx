@@ -56,7 +56,7 @@ interface Participant {
 }
 
 interface SingleEliminationBracketProps {
-  tournamentId: number;
+  tournamentId: string;
   participants: Participant[];
   // Đội đã đi tiếp từ vòng trước (vd: top K của vòng bảng).
   // Khi prop này có giá trị → dùng làm slot thật cho Round 1 thay vì placeholder.
@@ -937,6 +937,17 @@ export default function SingleEliminationBracket({
             tree.team2.name,
           );
           const hasExisting = !!matchScores[editingMatchId];
+          // Phân loại lỗi tỉ số để hiển thị inline & disable nút lưu. Toast
+          // dùng cho tình huống lúc submit sẽ bị che bởi modal overlay (z-index
+          // của react-toastify thấp hơn), nên ta block trực tiếp ở UI: nếu
+          // scoreError ≠ null → nút Lưu disabled + show warning inline.
+          const tieAtThreshold = formTeamA === need && formTeamB === need;
+          const overLimit = formTeamA > need || formTeamB > need;
+          const scoreError = tieAtThreshold
+            ? `Cả 2 đội không thể cùng đạt ${need} trận thắng.`
+            : overLimit
+            ? `Điểm không được vượt quá ${need} (BO${formBestOf}).`
+            : null;
 
           return createPortal(
             <div className={styles.modalOverlay} onClick={closeEditModal}>
@@ -1021,7 +1032,11 @@ export default function SingleEliminationBracket({
                   </div>
 
                   <div className={styles.modalSection}>
-                    {previewWinner ? (
+                    {scoreError ? (
+                      <div className={styles.previewInvalid}>
+                        ⚠️ {scoreError}
+                      </div>
+                    ) : previewWinner ? (
                       <div className={styles.previewWinner}>
                         ✅ Đội thắng: <strong>{previewWinner}</strong>
                       </div>
@@ -1058,7 +1073,8 @@ export default function SingleEliminationBracket({
                       type="button"
                       className={styles.confirmBtn}
                       onClick={confirmEditModal}
-                      disabled={saving}
+                      disabled={saving || scoreError !== null}
+                      title={scoreError || undefined}
                     >
                       {saving ? 'Đang lưu...' : '✓ Lưu'}
                     </button>

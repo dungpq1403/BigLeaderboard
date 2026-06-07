@@ -36,7 +36,7 @@ interface MatchData {
 }
 
 interface GroupStageBracketProps {
-  tournamentId: number;
+  tournamentId: string;
   teams: Team[];
   groupCount?: number;
   groupColumns?: Column[];

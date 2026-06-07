@@ -3,6 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const adminMiddleware = require('../middleware/admin');
 const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
+const { attachIdParamDecoders } = require('../middleware/idHash');
 const { JWT_SECRET } = require('../config/jwt');
 const multer = require('multer');
 const path = require('path');
@@ -49,6 +50,11 @@ const uploadTournament = multer({
     }
   }
 });
+
+// Đăng ký auto-decode hash → số nguyên cho mọi URL param tên trong DECODE_PARAMS
+// (id, tournamentId, gameId, userId). Phải gọi TRƯỚC khi định nghĩa các route
+// để Express xử lý đúng.
+attachIdParamDecoders(router);
 
 // ============ AUTH ROUTES ============
 router.get('/test', (req, res) => {

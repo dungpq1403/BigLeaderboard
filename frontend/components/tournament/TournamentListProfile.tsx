@@ -7,8 +7,8 @@ import TournamentCreator from './TournamentCreator';
 import { useFormat } from '@/context/FormatContext';
 
 type Tournament = {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -18,9 +18,9 @@ type Tournament = {
   prize: number;
   description: string;
   imageUrl: string;
-  createdBy: number;
+  createdBy: string;
   creator?: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
   };
@@ -35,7 +35,7 @@ export default function TournamentListProfile({ tournaments }: TournamentListPro
   const router = useRouter();
   const { getFormatName, getFormatIcon } = useFormat();
 
-  const handleCardClick = (tournamentId: number) => {
+  const handleCardClick = (tournamentId: string) => {
     router.push(`/tournaments/${tournamentId}`);
   };
 

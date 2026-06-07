@@ -9,16 +9,16 @@ import GenshinProfileDisplay from './GenshinProfileDisplay';
 import { apiFetch } from '@/lib/api';
 
 interface Game {
-  id: number;
+  id: string;
   name: string;
   slug: string;
   icon: string;
 }
 
 interface GameProfile {
-  id: number;
-  userId: number;
-  gameId: number;
+  id: string;
+  userId: string;
+  gameId: string;
   uid: string;
   profileData: any;
   lastSynced: string;
@@ -26,16 +26,16 @@ interface GameProfile {
 }
 
 interface GameProfileManagerProps {
-  userId: number;
+  userId: string;
   isOwnProfile: boolean;  // Thêm prop này
 }
 
 export default function GameProfileManager({ userId, isOwnProfile }: GameProfileManagerProps) {
   const queryClient = useQueryClient();
-  const [addingGame, setAddingGame] = useState<number | null>(null);
+  const [addingGame, setAddingGame] = useState<string | null>(null);
   const [uidInput, setUidInput] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ gameId: number; gameName: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ gameId: string; gameName: string } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function GameProfileManager({ userId, isOwnProfile }: GameProfile
     queryClient.invalidateQueries({ queryKey: ['users', userId, 'game-profiles'] });
 
   const addMutation = useMutation({
-    mutationFn: ({ gameId, uid }: { gameId: number; uid: string }) =>
+    mutationFn: ({ gameId, uid }: { gameId: string; uid: string }) =>
       apiFetch<{ message?: string }>(`/users/${userId}/game-profiles`, {
         method: 'POST',
         body: { gameId, uid },
@@ -92,7 +92,7 @@ export default function GameProfileManager({ userId, isOwnProfile }: GameProfile
     },
   });
 
-  const handleAddProfile = (gameId: number) => {
+  const handleAddProfile = (gameId: string) => {
     if (!uidInput.trim()) {
       toast.error('Vui lòng nhập UID');
       return;
@@ -101,7 +101,7 @@ export default function GameProfileManager({ userId, isOwnProfile }: GameProfile
   };
 
   const syncMutation = useMutation({
-    mutationFn: (gameId: number) =>
+    mutationFn: (gameId: string) =>
       apiFetch<{ message?: string }>(
         `/users/${userId}/game-profiles/${gameId}/sync`,
         { method: 'POST' }
@@ -115,13 +115,13 @@ export default function GameProfileManager({ userId, isOwnProfile }: GameProfile
     },
   });
 
-  const handleSync = (gameId: number) => syncMutation.mutate(gameId);
+  const handleSync = (gameId: string) => syncMutation.mutate(gameId);
   // syncing chính là gameId đang được sync (suy từ mutation.variables) — Type
   // assertion vì variables có thể là undefined.
-  const syncingGameId = syncMutation.isPending ? (syncMutation.variables as number | undefined) : null;
+  const syncingGameId = syncMutation.isPending ? (syncMutation.variables as string | undefined) : null;
 
   const deleteMutation = useMutation({
-    mutationFn: (gameId: number) =>
+    mutationFn: (gameId: string) =>
       apiFetch<{ message?: string }>(`/users/${userId}/game-profiles/${gameId}`, {
         method: 'DELETE',
       }),
@@ -136,10 +136,10 @@ export default function GameProfileManager({ userId, isOwnProfile }: GameProfile
     },
   });
   const deletingGameId = deleteMutation.isPending
-    ? (deleteMutation.variables as number | undefined)
+    ? (deleteMutation.variables as string | undefined)
     : null;
 
-  const handleDeleteClick = (gameId: number, gameName: string) => {
+  const handleDeleteClick = (gameId: string, gameName: string) => {
     setDeleteTarget({ gameId, gameName });
     setShowDeleteConfirm(true);
   };

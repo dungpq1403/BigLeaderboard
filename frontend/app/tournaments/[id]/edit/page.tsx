@@ -13,8 +13,8 @@ interface EditTournamentPageProps {
 }
 
 type TournamentDetail = {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -24,7 +24,7 @@ type TournamentDetail = {
   prize: number;
   description?: string;
   imageUrl?: string;
-  createdBy: number;
+  createdBy: string;
   advancementSteps?: number[] | null;
   groupColumns?: unknown[] | null;
   teamMembers?: number | null;
@@ -37,10 +37,10 @@ type RoundBO = { roundNumber: number; formatType: string; bestOf: number };
 
 export default function EditTournamentPage({ params }: EditTournamentPageProps) {
   const router = useRouter();
-  const { id: idParam } = use(params);
-  const tournamentId = Number(idParam);
+  // tournamentId là chuỗi hash Sqids do backend trả về, không parse sang số.
+  const { id: tournamentId } = use(params);
 
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   // Auth gate giống các trang protected khác. Chưa login → /login.
@@ -68,14 +68,14 @@ export default function EditTournamentPage({ params }: EditTournamentPageProps) 
     queryKey: ['tournaments', tournamentId],
     queryFn: ({ signal }) =>
       apiFetch<TournamentDetail>(`/tournaments/${tournamentId}`, { signal }),
-    enabled: authChecked && Number.isFinite(tournamentId),
+    enabled: authChecked && Boolean(tournamentId),
   });
 
   const { data: contacts = [] } = useQuery<Contact[]>({
     queryKey: ['tournaments', tournamentId, 'contacts'],
     queryFn: ({ signal }) =>
       apiFetch<Contact[]>(`/tournaments/${tournamentId}/contacts`, { signal, auth: false }),
-    enabled: authChecked && Number.isFinite(tournamentId),
+    enabled: authChecked && Boolean(tournamentId),
     select: (d) => (Array.isArray(d) ? d : []),
   });
 
@@ -86,7 +86,7 @@ export default function EditTournamentPage({ params }: EditTournamentPageProps) 
         signal,
         auth: false,
       }),
-    enabled: authChecked && Number.isFinite(tournamentId),
+    enabled: authChecked && Boolean(tournamentId),
     select: (d) => (Array.isArray(d) ? d : []),
   });
 

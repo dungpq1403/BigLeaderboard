@@ -558,6 +558,18 @@
   font-size: 0.85rem;
 }
 
+/* Báo lỗi tỉ số inline (vd: cả 2 đội cùng đạt mức thắng, điểm vượt ngưỡng).
+   Dùng tông đỏ để phân biệt rõ với previewWinner (xanh) / previewPending (xám). */
+.previewInvalid {
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.25) 0%, rgba(153, 27, 27, 0.25) 100%);
+  border: 1px solid rgba(248, 113, 113, 0.6);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.45rem;
+  color: #fecaca;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .modalFooter {
   display: flex;
   justify-content: space-between;
@@ -614,8 +626,16 @@
   font-family: inherit;
 }
 
-.confirmBtn:hover {
+.confirmBtn:hover:not(:disabled) {
   filter: brightness(1.1);
+}
+
+.confirmBtn:disabled,
+.clearBtn:disabled,
+.cancelBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: grayscale(0.3);
 }
 
 @media (max-width: 480px) {

@@ -14,8 +14,8 @@ import { apiFetch } from "@/lib/api";
 const SEARCH_RESULTS_LIMIT = 50;
 
 type Tournament = {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -25,12 +25,12 @@ type Tournament = {
   prize: number;
   imageUrl: string;
   creator: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
   } | null;
   game: {
-    id: number;
+    id: string;
     name: string;
     slug: string;
     icon: string | null;
@@ -220,7 +220,7 @@ function SearchPageInner() {
                               </div>
                             )}
                             <TournamentCreator
-                              userId={t.creator?.id || 0}
+                              userId={t.creator?.id || ""}
                               username={t.creator?.username || "Unknown"}
                               fullName={t.creator?.fullName}
                               showFullName

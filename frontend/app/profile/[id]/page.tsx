@@ -10,7 +10,7 @@ import GameProfileManager from '@/components/GameProfileManager';
 import { apiFetch, ApiError } from '@/lib/api';
 
 interface User {
-  id: number;
+  id: string;
   username: string;
   fullName: string;
   email: string;
@@ -21,8 +21,8 @@ interface User {
 }
 
 interface Tournament {
-  id: number;
-  gameId: number;
+  id: string;
+  gameId: string;
   name: string;
   formats: string[];
   startDate: string;
@@ -32,9 +32,9 @@ interface Tournament {
   prize: number;
   description: string;
   imageUrl: string;
-  createdBy: number;
+  createdBy: string;
   creator?: {
-    id: number;
+    id: string;
     username: string;
     fullName: string;
   };
@@ -47,11 +47,11 @@ interface ProfilePageProps {
 export default function ProfilePage({ params }: ProfilePageProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { id: idParam } = use(params);
-  const userId = Number(idParam);
+  // userId là chuỗi hash Sqids.
+  const { id: userId } = use(params);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -78,7 +78,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
         throw err;
       }
     },
-    enabled: Number.isFinite(userId),
+    enabled: Boolean(userId),
   });
 
   const { data: registeredTournaments = [] } = useQuery<Tournament[]>({
@@ -88,7 +88,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
         signal,
         auth: false,
       }),
-    enabled: Number.isFinite(userId),
+    enabled: Boolean(userId),
     select: (d) => (Array.isArray(d) ? d : []),
   });
 
@@ -99,7 +99,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
         signal,
         auth: false,
       }),
-    enabled: Number.isFinite(userId),
+    enabled: Boolean(userId),
     select: (d) => (Array.isArray(d) ? d : []),
   });
 

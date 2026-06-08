@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const adminMiddleware = require('../middleware/admin');
+const checkRestriction = require('../middleware/checkRestriction');
 const { loginLimiter, registerLimiter } = require('../middleware/rateLimiter');
 const { attachIdParamDecoders } = require('../middleware/idHash');
 const { JWT_SECRET } = require('../config/jwt');
@@ -12,6 +13,7 @@ const fs = require('fs');
 // Controllers
 const authController = require('../controller/authController');
 const userController = require('../controller/userController');
+const adminController = require('../controller/adminController');
 const gameController = require('../controller/gameController');
 const tournamentController = require('../controller/tournamentController');
 const registrationController = require('../controller/registrationController');
@@ -87,7 +89,7 @@ router.delete('/games/:id', authMiddleware, adminMiddleware, gameController.dele
 // ============ TOURNAMENT ROUTES ============
 router.get('/tournaments/search', tournamentController.searchTournaments);
 router.get('/tournaments/:id', tournamentController.getTournamentById);
-router.post('/tournaments', authMiddleware, tournamentController.createTournament);
+router.post('/tournaments', authMiddleware, checkRestriction, tournamentController.createTournament);
 router.delete('/tournaments/:id', authMiddleware, tournamentController.deleteTournament);
 router.get('/tournaments/:id/contacts', tournamentController.getTournamentContacts);
 router.get('/tournaments/:id/participants', authMiddleware, tournamentController.getParticipants);
@@ -199,7 +201,7 @@ router.put('/tournaments/:id/round-best-of', authMiddleware, async (req, res) =>
 });
 
 // ============ REGISTRATION ROUTES ============
-router.post('/tournaments/:id/register', authMiddleware, registrationController.registerTournament);
+router.post('/tournaments/:id/register', authMiddleware, checkRestriction, registrationController.registerTournament);
 router.delete('/tournaments/:id/cancel-registration', authMiddleware, registrationController.cancelRegistration);
 router.get('/tournaments/:id/check-registration', async (req, res, next) => {
   // Kiểm tra token nếu có nhưng không bắt buộc
@@ -233,5 +235,12 @@ router.get('/tournaments/:id/registration-status', authMiddleware, registrationC
 
 // ============ UPLOAD ROUTES ============
 router.post('/upload/tournament-image', authMiddleware, uploadTournament.single('image'), uploadController.uploadTournamentImage);
+
+// ============ ADMIN ROUTES ============
+// Tất cả endpoint admin đều bắt buộc auth + adminMiddleware (req.user.role === 'admin').
+router.get('/admin/users', authMiddleware, adminMiddleware, adminController.listUsers);
+router.put('/admin/users/:userId/role', authMiddleware, adminMiddleware, adminController.updateUserRole);
+router.put('/admin/users/:userId/restrict', authMiddleware, adminMiddleware, adminController.restrictUser);
+router.delete('/admin/users/:userId', authMiddleware, adminMiddleware, adminController.deleteUser);
 
 module.exports = router;

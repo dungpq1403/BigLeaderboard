@@ -1,0 +1,336 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.header {
+  margin-bottom: 1.5rem;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #fde68a;
+  margin-bottom: 0.75rem;
+}
+
+.breadcrumbLink {
+  color: #fcd34d;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.breadcrumbLink:hover {
+  color: #fef3c7;
+  text-decoration: underline;
+}
+
+.breadcrumbSeparator {
+  color: rgba(245, 158, 11, 0.5);
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 800;
+  background: linear-gradient(120deg, #fcd34d, #fffbeb);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  color: #fde68a;
+  font-size: 0.9rem;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 240px;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.5rem;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.6) 0%, rgba(69, 26, 3, 0.6) 100%);
+  color: #fef3c7;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.searchInput::placeholder {
+  color: rgba(253, 230, 138, 0.7);
+}
+
+.searchInput:focus {
+  border-color: #fcd34d;
+  box-shadow: 0 0 0 2px rgba(252, 211, 77, 0.35);
+}
+
+.errorBanner {
+  padding: 0.75rem 1rem;
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.5);
+  color: #fecaca;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tableWrapper {
+  position: relative;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.4) 0%, rgba(69, 26, 3, 0.4) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: 0.75rem;
+  overflow: auto;
+  margin-bottom: 1rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  color: #fef3c7;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  background: linear-gradient(135deg, rgba(180, 83, 9, 0.85) 0%, rgba(120, 53, 15, 0.85) 100%);
+  text-align: left;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fef3c7;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.actionsHeader {
+  text-align: center;
+}
+
+.table tbody td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid rgba(180, 83, 9, 0.3);
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.selfRow {
+  background: rgba(252, 211, 77, 0.06);
+}
+
+.usernameLink {
+  color: #fcd34d;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.usernameLink:hover {
+  text-decoration: underline;
+}
+
+.selfBadge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.25);
+  border: 1px solid rgba(34, 197, 94, 0.55);
+  color: #bbf7d0;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.emailCell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roleBadge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.roleAdmin {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.4) 0%, rgba(180, 83, 9, 0.4) 100%);
+  color: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+
+.roleUser {
+  background: rgba(107, 114, 128, 0.25);
+  color: #e5e7eb;
+  border: 1px solid rgba(156, 163, 175, 0.5);
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.statusActive {
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+  border: 1px solid rgba(34, 197, 94, 0.5);
+}
+
+.statusRestricted {
+  background: rgba(220, 38, 38, 0.2);
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.6);
+}
+
+.actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.4rem;
+  border: 1px solid transparent;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.actionBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.actionBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.actionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.roleBtn {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e3a8a 100%);
+  color: #dbeafe;
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.roleBtn:hover:not(:disabled) {
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.45);
+}
+
+.deleteBtn {
+  background: linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
+  color: #fee2e2;
+  border-color: rgba(248, 113, 113, 0.6);
+}
+
+.deleteBtn:hover:not(:disabled) {
+  box-shadow: 0 4px 10px rgba(220, 38, 38, 0.45);
+}
+
+.restrictBtn {
+  background: linear-gradient(135deg, #ca8a04 0%, #854d0e 100%);
+  color: #fef3c7;
+  border-color: rgba(252, 211, 77, 0.6);
+}
+
+.restrictBtn:hover:not(:disabled) {
+  box-shadow: 0 4px 10px rgba(202, 138, 4, 0.55);
+}
+
+.unrestrictBtn {
+  background: linear-gradient(135deg, #16a34a 0%, #14532d 100%);
+  color: #d1fae5;
+  border-color: rgba(74, 222, 128, 0.6);
+}
+
+.unrestrictBtn:hover:not(:disabled) {
+  box-shadow: 0 4px 10px rgba(22, 163, 74, 0.55);
+}
+
+.emptyCell {
+  text-align: center;
+  padding: 2rem 1rem !important;
+  color: #fde68a;
+}
+
+.refreshOverlay {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba(120, 53, 15, 0.85);
+  color: #fde68a;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+}
+
+.loadingCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 1.5rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.4) 0%, rgba(69, 26, 3, 0.4) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fde68a;
+}
+
+.loadingSpinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid rgba(245, 158, 11, 0.3);
+  border-top-color: #f59e0b;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .emailCell {
+    max-width: 140px;
+  }
+  .table {
+    font-size: 0.8rem;
+  }
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

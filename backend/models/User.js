@@ -52,6 +52,14 @@ const User = sequelize.define(
       allowNull: false,
       defaultValue: 'user',
     },
+    // Thời điểm hết hạn giới hạn của user. NULL → không giới hạn. Khi giá trị
+    // này > NOW(), user bị chặn tạo giải đấu / đăng ký giải đấu (xem
+    // middleware/checkRestriction.js). Admin set qua /admin/users/:id/restrict.
+    restrictedUntil: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    },
   },
   {
     tableName: 'users',

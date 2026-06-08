@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import styles from './TournamentList.module.css';
 import TournamentStatus from './TournamentStatus';
-import TournamentStats from './TournamentStats';
+import TournamentStats, {
+  type TournamentStatusFilter,
+  getTournamentStatus,
+} from './TournamentStats';
 import RegistrationStatus from '@/components/registration/RegistrationStatus';
 import TournamentCreator from './TournamentCreator';
 import DeleteTournamentButton from './DeleteTournamentButton';
@@ -48,6 +51,7 @@ export default function TournamentList({ gameId }: TournamentListProps) {
   const { getFormatName, getFormatIcon } = useFormat();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<TournamentStatusFilter>('all');
 
   // currentUserId chỉ đọc 1 lần lúc mount; không phải server state nên không
   // bỏ vào useQuery. Sau khi có authStore (Zustand) sẽ thay bằng selector.
@@ -105,12 +109,18 @@ export default function TournamentList({ gameId }: TournamentListProps) {
     },
   });
 
-  // Chỉ phụ thuộc length: tournaments là array mới mỗi lần fetch nhưng số
-  // trang chỉ đổi khi count đổi → tránh tính lại không cần thiết.
-  const totalPages = Math.max(1, Math.ceil(tournaments.length / PAGE_SIZE));
+  // Lọc theo status đang chọn ở thẻ TournamentStats. Tính trên list đầy đủ
+  // (không paged) để stats card vẫn hiển thị đúng tổng count toàn bộ.
+  const filteredTournaments = useMemo(() => {
+    if (statusFilter === 'all') return tournaments;
+    return tournaments.filter((t) => getTournamentStatus(t) === statusFilter);
+  }, [tournaments, statusFilter]);
 
-  // Nếu currentPage > totalPages (vd. sau khi xóa tournament làm giảm số
-  // trang), clamp về trang cuối. Đặt trong effect để tránh setState khi render.
+  const totalPages = Math.max(1, Math.ceil(filteredTournaments.length / PAGE_SIZE));
+
+  // Nếu currentPage > totalPages (vd. sau khi xóa tournament hoặc đổi filter
+  // làm giảm số trang), clamp về trang cuối. Đặt trong effect để tránh setState
+  // khi render.
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
@@ -119,8 +129,15 @@ export default function TournamentList({ gameId }: TournamentListProps) {
 
   const pagedTournaments = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
-    return tournaments.slice(start, start + PAGE_SIZE);
-  }, [tournaments, currentPage]);
+    return filteredTournaments.slice(start, start + PAGE_SIZE);
+  }, [filteredTournaments, currentPage]);
+
+  // Khi user bấm vào 1 thẻ status khác → reset về trang 1 để không bị "mắc kẹt"
+  // ở trang trống nếu danh sách lọc ra ngắn hơn trang hiện tại.
+  const handleStatusChange = (status: TournamentStatusFilter) => {
+    setStatusFilter(status);
+    setCurrentPage(1);
+  };
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -161,8 +178,19 @@ export default function TournamentList({ gameId }: TournamentListProps) {
   return (
     <>
       {/* Stats luôn tính trên toàn bộ tournaments (không paged) → người dùng
-          thấy tổng quan giải đấu của game bất kể đang ở trang nào. */}
-      <TournamentStats tournaments={tournaments} />
+          thấy tổng quan giải đấu của game bất kể đang ở trang nào. Click vào
+          từng thẻ để lọc list theo status tương ứng. */}
+      <TournamentStats
+        tournaments={tournaments}
+        selectedStatus={statusFilter}
+        onStatusChange={handleStatusChange}
+      />
+      {filteredTournaments.length === 0 ? (
+        <div className={styles.noTournaments}>
+          Không có giải đấu nào ở trạng thái này.
+        </div>
+      ) : (
+      <>
       <div className={styles.tournamentGrid}>
         {pagedTournaments.map((tournament) => {
         const isCreator = currentUserId === tournament.createdBy;
@@ -248,9 +276,11 @@ export default function TournamentList({ gameId }: TournamentListProps) {
         currentPage={currentPage}
         totalPages={totalPages}
         onPageChange={handlePageChange}
-        totalItems={tournaments.length}
+        totalItems={filteredTournaments.length}
         pageSize={PAGE_SIZE}
       />
+      </>
+      )}
     </>
   );
 }

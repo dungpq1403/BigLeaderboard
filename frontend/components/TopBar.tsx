@@ -18,6 +18,9 @@ type AuthUser = {
   id: string;
   username: string;
   fullName: string;
+  // role do BE trả qua /verify-token; FE dùng để gate UI Admin Panel.
+  // Authority thật vẫn nằm ở BE (adminMiddleware), client chỉ ẩn nút.
+  role?: 'user' | 'admin';
 };
 
 type TournamentSearchResult = {
@@ -210,6 +213,16 @@ export default function TopBar() {
     router.push(`/profile/${profileId}`);
   };
 
+  const handleAdmin = () => {
+    setShowDropdown(false);
+    router.push("/adminPanel/userManagement");
+  };
+
+  // Quyền admin được kiểm tra từ role mà /verify-token trả ra. Chỉ ẩn nút khi
+  // không phải admin — server vẫn enforce qua adminMiddleware nên không có
+  // bypass thật sự kể cả khi user chỉnh DOM.
+  const isAdmin = user?.role === 'admin';
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   };
@@ -335,6 +348,14 @@ export default function TopBar() {
                     <button onClick={() => handleProfile(user.id)} className={styles.dropdownItem}>
                       👤 Profile
                     </button>
+                    {isAdmin && (
+                      <>
+                        <div className={styles.dropdownDivider} />
+                        <button onClick={handleAdmin} className={styles.dropdownItem}>
+                          👑 Admin Panel
+                        </button>
+                      </>
+                    )}
                     <div className={styles.dropdownDivider} />
                     <button onClick={handleLogout} className={styles.dropdownItem}>
                       🚪 Logout

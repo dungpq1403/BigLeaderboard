@@ -8,6 +8,7 @@ const apiRoutes = require('./routes/api');
 const enka = require('./routes/enka');
 const imageUpload = require('./routes/imageUpload');
 const initAdmin = require('./scripts/initAdmin');
+const addUserRestrictedUntilColumn = require('./scripts/addUserRestrictedUntil');
 const { encodeResponseIds, decodeBodyIds } = require('./middleware/idHash');
 
 const app = express();
@@ -46,9 +47,14 @@ const startServer = async () => {
     console.log('✅ MySQL connected via Sequelize');
 
     await initAdmin();
-    
+
     // Sync models - creates table if it does not exist.
     await sequelize.sync();
+
+    // Sequelize.sync() (không có alter:true) không thêm cột mới cho bảng đã
+    // tồn tại → cần migration thủ công cho các trường thêm sau. Idempotent
+    // nên gọi mọi lần startup không gây tác dụng phụ.
+    await addUserRestrictedUntilColumn();
     
     app.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);

@@ -18,12 +18,35 @@
   border: 1px solid rgba(245, 158, 11, 0.5);
   box-shadow: 0 0 6px rgba(245, 158, 11, 0.2), inset 0 0 4px rgba(245, 158, 11, 0.15);
   text-align: center;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 
 .statCard:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 10px rgba(245, 158, 11, 0.35);
+}
+
+/* Khi user truyền onStatusChange, render <button>; reset style mặc định của
+   button để đồng bộ với <div> cũ nhưng vẫn giữ được khả năng focus/keyboard. */
+.clickable {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid #fcd34d;
+  outline-offset: 2px;
+}
+
+.active {
+  border-color: #fcd34d;
+  box-shadow: 0 0 0 2px rgba(252, 211, 77, 0.45),
+    0 4px 14px rgba(245, 158, 11, 0.45),
+    inset 0 0 6px rgba(245, 158, 11, 0.3);
+  transform: translateY(-1px);
 }
 
 .statLabel {

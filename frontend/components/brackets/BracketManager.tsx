@@ -12,6 +12,7 @@ import { toast } from 'react-toastify';
 import { useFormat } from '@/context/FormatContext';
 import { calculateGroupStageStats, Match as ScoringMatch } from '@/utils/GroupStageScoring';
 import { apiFetch } from '@/lib/api';
+import RandomizerPopUp from '../randomizer/RandomizerPopUp';
 
 interface Tournament {
   id: string;
@@ -92,6 +93,55 @@ function normalizeFormatOrder(formats: string[]): BracketType[] {
 const getStorageKey = (tournamentId: string) => `bracket_active_${tournamentId}`;
 const getGroupsCountKey = (tournamentId: string) => `bracket_groups_${tournamentId}`;
 const getBracketCreatedKey = (tournamentId: string) => `bracket_created_${tournamentId}`;
+// Lưu thứ tự cặp đấu (manual seeding) do người dùng random, key tách riêng theo
+// bracketType vì single_elim và double_elim có thể được random độc lập với
+// nhau cho cùng 1 giải đấu. Bumping version (v2) khi đổi schema từ string[]
+// (ID-only) sang Participant[] (object {id,name}) — cache cũ sẽ bị bỏ qua.
+const getManualSeedingKey = (tournamentId: string, bracketType: BracketType) =>
+  `bracket_seeding_v2_${tournamentId}_${bracketType}`;
+
+interface SeedTeam {
+  id: string;
+  name: string;
+}
+
+// Format nào hỗ trợ randomizer cặp đấu (bracket có khái niệm cặp đấu trực
+// tiếp). Vòng bảng phân chia theo group, Swiss tự ghép theo record → không có
+// chỗ để áp manual pair seeding ở đây.
+const RANDOMIZABLE_BRACKETS: ReadonlySet<BracketType> = new Set([
+  'single_elimination',
+  'double_elimination',
+]);
+
+// Đọc seeding đã lưu cho 1 bracketType. Tự fallback về null khi value hỏng
+// (vd: JSON malformed hoặc không đúng shape Participant[]) để tránh crash bracket.
+function loadManualSeeding(
+  tournamentId: string,
+  bracketType: BracketType,
+): SeedTeam[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(getManualSeedingKey(tournamentId, bracketType));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const result: SeedTeam[] = [];
+    for (const item of parsed) {
+      if (
+        !item ||
+        typeof item !== 'object' ||
+        typeof item.id !== 'string' ||
+        typeof item.name !== 'string'
+      ) {
+        return null;
+      }
+      result.push({ id: item.id, name: item.name });
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
 
 // Tính danh sách đội đi tiếp từ vòng bảng dựa trên xếp hạng hiện tại.
 // - Gộp matches theo groupId
@@ -239,12 +289,27 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [groupCount, setGroupCount] = useState(1);
   const [isClient, setIsClient] = useState(false);
+  const [showRandomizerPopUp, setShowRandomizerPopUp] = useState(false);
+  // manualSeeding theo từng bracketType. null = chưa random → bracket sẽ hiển
+  // thị placeholder "Chưa random" thay vì auto-pair theo thứ tự đăng ký.
+  // Lưu object {id, name} đã resolve sẵn để bracket có thể render placeholder
+  // cho vòng sau ("Đội đi tiếp #1") mà không cần lookup lại trong participants.
+  // Persist sang localStorage để user reload trang không mất các cặp đã random.
+  const [manualSeedings, setManualSeedings] = useState<
+    Partial<Record<BracketType, SeedTeam[]>>
+  >({});
   // bracketCreated được derive từ data của query (xem `bracketCreated` bên dưới),
   // không còn là state cục bộ — tránh trùng nguồn dữ liệu.
-
   useEffect(() => {
     setIsClient(true);
-  }, []);
+    // Đọc các seeding đã lưu cho tournament này. Chạy 1 lần khi mount client.
+    const loaded: Partial<Record<BracketType, SeedTeam[]>> = {};
+    RANDOMIZABLE_BRACKETS.forEach((bt) => {
+      const seeding = loadManualSeeding(tournamentId, bt);
+      if (seeding) loaded[bt] = seeding;
+    });
+    if (Object.keys(loaded).length > 0) setManualSeedings(loaded);
+  }, [tournamentId]);
 
   // Query best-of settings cho từng vòng. Cache dùng chung với edit/detail page.
   const { data: bestOf = [] } = useQuery<RoundBestOf[]>({
@@ -496,6 +561,48 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     }
   };
 
+  // Áp dụng kết quả random (từ Vòng quay / Random list / Tự động Random) vào
+  // bracket đang được chọn. orderedTeams là mảng team object {id, name} theo
+  // thứ tự ô slot: (t0,t1) là cặp 1, (t2,t3) là cặp 2, … Brackets dùng trực
+  // tiếp làm slot order (xem manualSeeding prop trong SingleEliminationBracket).
+  // Lưu cả object để placeholder cho vòng sau vẫn hiển thị đúng tên.
+  const handleConfirmPairs = (orderedTeams: SeedTeam[]) => {
+    if (!activeBracket) return;
+    if (!RANDOMIZABLE_BRACKETS.has(activeBracket)) return;
+    // Sanitize: chỉ giữ {id, name} để tránh lưu thêm field thừa từ caller.
+    const sanitized: SeedTeam[] = orderedTeams.map((t) => ({
+      id: t.id,
+      name: t.name,
+    }));
+    setManualSeedings((prev) => ({ ...prev, [activeBracket]: sanitized }));
+    try {
+      localStorage.setItem(
+        getManualSeedingKey(tournamentId, activeBracket),
+        JSON.stringify(sanitized),
+      );
+    } catch {
+      // Bỏ qua quota lỗi — seeding vẫn nằm trong state cho tới khi reload.
+    }
+    toast.success('Đã áp dụng cặp đấu vào nhánh đấu');
+  };
+
+  // Xoá seeding của bracket đang active để quay lại trạng thái "chưa random".
+  // Cho phép user random lại nếu muốn đổi kết quả.
+  const handleClearSeeding = () => {
+    if (!activeBracket) return;
+    if (!RANDOMIZABLE_BRACKETS.has(activeBracket)) return;
+    setManualSeedings((prev) => {
+      const next = { ...prev };
+      delete next[activeBracket];
+      return next;
+    });
+    try {
+      localStorage.removeItem(getManualSeedingKey(tournamentId, activeBracket));
+    } catch {
+      // ignore
+    }
+  };
+
   const handleSplitConfirm = (newGroupCount: number) => {
     setShowSplitModal(false);
     // Modal được dùng cho cả việc tạo mới và chia lại bảng
@@ -617,6 +724,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
             isReadOnly={!isCreator}
             formatNames={formatNames}
             startDate={tournament.startDate}
+            manualSeeding={manualSeedings.single_elimination}
           />
         );
       }
@@ -662,6 +770,7 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
             isReadOnly={!isCreator}
             formatNames={formatNames}
             startDate={tournament.startDate}
+            manualSeeding={manualSeedings.double_elimination}
           />
         );
       }
@@ -706,13 +815,104 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
     );
   }
 
+  // Bracket đang active có hỗ trợ randomizer cặp đấu không?
+  // (Vòng bảng / Swiss có cơ chế ghép cặp riêng → không hiển thị nút).
+  const canRandomizeActive =
+    !!activeBracket && RANDOMIZABLE_BRACKETS.has(activeBracket);
+  const activeSeeding = activeBracket
+    ? manualSeedings[activeBracket]
+    : undefined;
+  const hasActiveSeeding = !!activeSeeding && activeSeeding.length > 0;
+
+  // Pool participant cho randomizer phải đúng theo cấu trúc của nhánh đang
+  // active:
+  //  - Nhánh là thể thức đầu tiên trong chuỗi → dùng participantList (đăng ký).
+  //  - Nhánh sau khi vòng trước (group/swiss) → SIZE = advancementSteps[idx-1]:
+  //      · Nếu vòng trước đã có dữ liệu → fill bằng qualifiedTeams thật.
+  //      · Phần còn thiếu (vòng trước chưa xong, hoặc không đủ đội) → placeholder
+  //        "Đội đi tiếp #i (Tên vòng trước)" với ID stable theo bracketType + index
+  //        để các lần random ra cùng pool có cùng IDs (giúp seeding sống sót
+  //        qua reload).
+  //
+  // Yêu cầu của user: với các thể thức sau vòng đầu, wheel phải dựa trên
+  // advancementSteps chứ KHÔNG lấy hết toàn bộ participants.
+  const formatsArr = tournament.formats || [];
+  const advSteps = tournament.advancementSteps || [];
+  const randomizerPool: SeedTeam[] = (() => {
+    if (!activeBracket || !RANDOMIZABLE_BRACKETS.has(activeBracket)) return [];
+    const stageIdx = formatsArr.indexOf(activeBracket);
+    const isFirstStage = stageIdx <= 0;
+    if (isFirstStage) return participantList;
+
+    const totalAdvancing = advSteps[stageIdx - 1];
+    if (typeof totalAdvancing !== 'number' || totalAdvancing <= 0) return [];
+
+    const prevFormat = formatsArr[stageIdx - 1];
+    let realQualified: SeedTeam[] = [];
+    if (prevFormat === 'group' && groupMatches.length > 0) {
+      realQualified = computeQualifiedFromGroups(
+        groupMatches,
+        participantList,
+        totalAdvancing,
+      );
+    } else if (prevFormat === 'swiss' && swissMatches.length > 0) {
+      realQualified = computeQualifiedFromSwiss(
+        swissMatches,
+        participantList,
+        totalAdvancing,
+      );
+    }
+
+    const prevLabel = formatNames[prevFormat] || prevFormat || 'vòng trước';
+    const pool: SeedTeam[] = [];
+    for (let i = 0; i < totalAdvancing; i++) {
+      const real = realQualified[i];
+      if (real) {
+        pool.push({ id: real.id, name: real.name });
+      } else {
+        pool.push({
+          id: `placeholder-${activeBracket}-${i}`,
+          name: `Đội đi tiếp #${i + 1} (${prevLabel})`,
+        });
+      }
+    }
+    return pool;
+  })();
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <h3 className={styles.title}>🏆 Nhánh đấu</h3>
+          {isCreator && canRandomizeActive && bracketCreated && (
+            <div className={styles.randomizerActions}>
+              <button
+                className={styles.randomizerButton}
+                onClick={() => setShowRandomizerPopUp(true)}
+                disabled={randomizerPool.length < 2}
+                title={
+                  randomizerPool.length < 2
+                    ? 'Cần ít nhất 2 đội đăng ký mới có thể random'
+                    : hasActiveSeeding
+                      ? 'Random lại cặp đấu cho nhánh này'
+                      : 'Random cặp đấu cho nhánh đang chọn'
+                }
+              >
+                {hasActiveSeeding ? 'Random lại cặp đấu' : 'Random cặp đấu'}
+              </button>
+              {hasActiveSeeding && (
+                <button
+                  className={styles.clearSeedingButton}
+                  onClick={handleClearSeeding}
+                  title="Xoá các cặp đã random, trả nhánh về trạng thái chưa random"
+                >
+                  Bỏ random
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        
+
         {bracketCreated && activeBracket && (
           <div className={styles.bracketTabs}>
             {availableBrackets.map(bracket => (
@@ -741,6 +941,12 @@ export default function BracketManager({ tournamentId, tournament, isCreator = f
           onClose={() => setShowSplitModal(false)}
         />
       )}
+      <RandomizerPopUp
+        isOpen={showRandomizerPopUp}
+        onClose={() => setShowRandomizerPopUp(false)}
+        participants={randomizerPool}
+        onConfirmPairs={handleConfirmPairs}
+      />
     </div>
   );
 }

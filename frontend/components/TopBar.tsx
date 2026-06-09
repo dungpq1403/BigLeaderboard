@@ -215,7 +215,7 @@ export default function TopBar() {
 
   const handleAdmin = () => {
     setShowDropdown(false);
-    router.push("/adminPanel/userManagement");
+    router.push("/adminPanel");
   };
 
   // Quyền admin được kiểm tra từ role mà /verify-token trả ra. Chỉ ẩn nút khi

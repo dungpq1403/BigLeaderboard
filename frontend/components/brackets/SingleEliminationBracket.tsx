@@ -70,6 +70,19 @@ interface SingleEliminationBracketProps {
   // Ngày bắt đầu giải đấu (ISO string). Khi truyền vào, score editing sẽ bị
   // khoá cho tới khi đến ngày này (đồng bộ với hành vi ở vòng bảng).
   startDate?: string;
+  // Thứ tự ô slot do người dùng chỉ định qua randomizer (Vòng quay / Random list /
+  // Tự động Random). Mỗi phần tử là 1 team {id, name}; (slot0,slot1) là cặp 1,
+  // (slot2,slot3) là cặp 2, … Khi prop này có giá trị, ta dùng nó làm thứ tự ô
+  // SLOT trực tiếp (bỏ qua hàm seedOrder) để bracket hiển thị đúng cặp mà
+  // người dùng đã random. Khi không có giá trị + giai đoạn đầu tiên → bracket
+  // hiển thị placeholder "Chưa random" thay vì auto-pair theo thứ tự đăng ký.
+  //
+  // Dùng object {id, name} (chứ không phải chỉ ID) vì pool randomizer có thể
+  // chứa placeholder cho các vòng sau (vd: "Đội đi tiếp #1") khi vòng trước
+  // chưa xong — những team đó không tồn tại trong participants / qualifiedTeams
+  // nên lookup theo ID sẽ fail. Lưu trực tiếp object để render không phụ thuộc
+  // vào trạng thái vòng trước.
+  manualSeeding?: Participant[];
 }
 
 // =====================================================
@@ -147,11 +160,15 @@ const getRoundName = (
 // Xây danh sách MatchDef cho 1 nhánh single elimination
 // inputCount: số đội bước vào
 // outputCount: số đội cần đi tiếp ra khỏi nhánh (1 nếu là vòng cuối)
+// useDirectOrder: khi true, không apply seedOrder (giữ nguyên thứ tự teamSlots
+//   → slot 0/1 thành cặp 1, slot 2/3 thành cặp 2…). Dùng cho trường hợp người
+//   dùng đã chỉ định cặp đấu qua randomizer.
 function buildMatchDefs(
   inputCount: number,
   outputCount: number,
   teamSlots: Array<{ id: string | null; name: string; label: string }>,
   includeThirdPlace: boolean,
+  useDirectOrder: boolean = false,
 ): MatchDef[] {
   if (inputCount < 2) return [];
 
@@ -175,8 +192,13 @@ function buildMatchDefs(
     rounds++;
   }
 
-  // Sắp xếp các slot theo seedOrder; slot dư so với inputCount là BYE
-  const seeds = seedOrder(bracketSize);
+  // Sắp xếp các slot:
+  //  - useDirectOrder: giữ nguyên thứ tự teamSlots → cặp ghép tuần tự theo
+  //    pair-list mà randomizer trả về.
+  //  - Mặc định: dùng seedOrder để xếp seed chuẩn (1-vs-cuối, 2-vs-áp cuối…).
+  const seeds = useDirectOrder
+    ? Array.from({ length: bracketSize }, (_, i) => i + 1)
+    : seedOrder(bracketSize);
   const slots = seeds.map((seed) => {
     const t = teamSlots[seed - 1];
     return t || { id: null, name: '', label: BYE_LABEL };
@@ -360,6 +382,7 @@ export default function SingleEliminationBracket({
   isReadOnly = false,
   formatNames = {},
   startDate,
+  manualSeeding,
 }: SingleEliminationBracketProps) {
   const queryClient = useQueryClient();
   // Tỉ số + BO cho từng trận (key = matchId), nguồn dữ liệu chính là DB.
@@ -459,18 +482,26 @@ export default function SingleEliminationBracket({
     return typeof next === 'number' && next > 0 ? next : 1;
   }, [isLastStage, advancementSteps, stageIndex]);
 
-  // ---- Sinh các slot đội ban đầu cho Round 1 ----
-  // Ưu tiên dùng đội đã đi tiếp từ vòng trước (nếu có), rồi tới participants gốc,
-  // còn thiếu thì điền bằng placeholder "Đội đi tiếp #i (vòng trước)".
+  // Khi randomizer trả manualSeeding → dùng trực tiếp object {id, name} làm
+  // slot, không lookup lại. useDirectOrder = true để bracket bỏ qua seedOrder
+  // và ghép cặp tuần tự (slot0+slot1, slot2+slot3, …) đúng pair-list từ wheel.
+  // Khi không có manualSeeding ở giai đoạn đầu → KHÔNG auto-fill bằng thứ tự
+  // đăng ký nữa, hiển thị placeholder "Chưa random" để user buộc phải bấm
+  // randomizer (thuật toán random đã được tách ra khỏi default behaviour).
+  const hasManualSeeding = !!manualSeeding && manualSeeding.length > 0;
+  const useDirectOrder = hasManualSeeding;
+
   const teamSlots = useMemo(() => {
     const slots: Array<{ id: string | null; name: string; label: string }> = [];
 
-    let realTeams: Participant[] = [];
-    if (qualifiedTeams && qualifiedTeams.length > 0) {
-      realTeams = qualifiedTeams;
-    } else if (isFirstStage) {
-      realTeams = participants;
-    }
+    // Chỉ điền tên đội thật khi user đã chạy randomizer (manualSeeding).
+    // CỐ Ý KHÔNG dùng qualifiedTeams ở đây: trước khi user random, bracket
+    // phải hiển thị placeholder (Chưa random / Đội đi tiếp #i) để tránh
+    // việc tự xếp cặp theo thứ tự kỹ thuật mà người tổ chức chưa xác nhận.
+    // qualifiedTeams vẫn được dùng làm pool cho randomizer ở BracketManager.
+    const realTeams: Participant[] = hasManualSeeding
+      ? (manualSeeding as Participant[])
+      : [];
 
     for (let i = 0; i < inputCount; i++) {
       const p = realTeams[i];
@@ -484,22 +515,28 @@ export default function SingleEliminationBracket({
           name: '',
           label: `Đội đi tiếp #${i + 1} (${prevName})`,
         });
+      } else {
+        slots.push({
+          id: null,
+          name: '',
+          label: 'Chưa random',
+        });
       }
     }
     return slots;
   }, [
-    qualifiedTeams,
+    hasManualSeeding,
+    manualSeeding,
     isFirstStage,
     inputCount,
-    participants,
     formats,
     stageIndex,
     formatNames,
   ]);
 
   const matchDefs = useMemo(
-    () => buildMatchDefs(inputCount, outputCount, teamSlots, thirdPlaceMatch),
-    [inputCount, outputCount, teamSlots, thirdPlaceMatch],
+    () => buildMatchDefs(inputCount, outputCount, teamSlots, thirdPlaceMatch, useDirectOrder),
+    [inputCount, outputCount, teamSlots, thirdPlaceMatch, useDirectOrder],
   );
 
   const getMatchBestOf = useCallback(
@@ -853,10 +890,16 @@ export default function SingleEliminationBracket({
         </div>
       </div>
 
-      {!isFirstStage && (!qualifiedTeams || qualifiedTeams.length < inputCount) && (
+      {!isFirstStage && !hasManualSeeding && (
         <div className={styles.note}>
-          ℹ️ Tên đội cụ thể sẽ được điền tự động khi vòng{' '}
-          <strong>{formatNames[formats[stageIndex - 1]] || formats[stageIndex - 1]}</strong> kết thúc.
+          ℹ️ Các cặp đấu sẽ được điền sau khi vòng{' '}
+          <strong>{formatNames[formats[stageIndex - 1]] || formats[stageIndex - 1]}</strong>{' '}
+          kết thúc và bạn bấm <strong>Random cặp đấu</strong>.
+        </div>
+      )}
+      {isFirstStage && !hasManualSeeding && (
+        <div className={styles.note}>
+          ℹ️ Bấm <strong>Random cặp đấu</strong> để xếp các đội vào nhánh đấu.
         </div>
       )}
 

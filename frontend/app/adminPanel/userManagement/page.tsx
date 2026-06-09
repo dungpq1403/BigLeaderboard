@@ -7,6 +7,8 @@ import { toast } from 'react-toastify';
 import { apiFetch, ApiError } from '@/lib/api';
 import { useAdminGuard } from '@/hooks/useAdminGuard';
 import Pagination from '@/components/pagination/Pagination';
+import RestrictUserModal from '@/components/admin/RestrictUserModal';
+import ConfirmModal from '@/components/admin/ConfirmModal';
 import styles from './page.module.css';
 
 const PAGE_SIZE = 20;
@@ -50,6 +52,10 @@ export default function UserManagementPage() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  // Target hiện đang được giới hạn qua modal. null → modal đóng.
+  const [restrictTarget, setRestrictTarget] = useState<AdminUser | null>(null);
+  // Target đang được mở khóa qua confirm modal. null → modal đóng.
+  const [unrestrictTarget, setUnrestrictTarget] = useState<AdminUser | null>(null);
 
   // Debounce search input → state thật sự (search) → queryKey → refetch.
   useEffect(() => {
@@ -107,6 +113,8 @@ export default function UserManagementPage() {
   });
 
   // Mutation giới hạn / bỏ giới hạn user. days = 0 hoặc null → unrestrict.
+  // Khi modal restrict đang mở và mutate thành công → tự đóng modal qua
+  // restrictTarget=null trong onSuccess.
   const restrictMutation = useMutation({
     mutationFn: ({ userId, days }: { userId: string; days: number | null }) =>
       apiFetch<{ message: string }>(`/admin/users/${userId}/restrict`, {
@@ -120,6 +128,10 @@ export default function UserManagementPage() {
           : 'Đã bỏ giới hạn user.'
       );
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      // Đóng cả 2 modal liên quan tới mutation này (chỉ 1 trong 2 đang mở thực
+      // tế, set null cả 2 là idempotent).
+      setRestrictTarget(null);
+      setUnrestrictTarget(null);
     },
     onError: (err) => {
       const msg = err instanceof ApiError ? err.message : 'Cập nhật giới hạn thất bại.';
@@ -151,30 +163,14 @@ export default function UserManagementPage() {
       toast.warning('Không thể giới hạn tài khoản admin.');
       return;
     }
-    // Sử dụng prompt đơn giản cho lần này. Có thể nâng cấp thành modal đẹp hơn
-    // (vd. dropdown 1/3/7/30 ngày + custom input) khi cần.
-    const input = window.prompt(
-      `Giới hạn user "${target.username}" trong bao nhiêu ngày? (1-365)`,
-      '7'
-    );
-    if (input === null) return; // user cancel
-    const days = Number(input);
-    if (!Number.isFinite(days) || days <= 0 || days > 365) {
-      toast.error('Số ngày phải là số nguyên dương ≤ 365.');
-      return;
-    }
-    restrictMutation.mutate({ userId: target.id, days: Math.floor(days) });
+    // Mở modal thay vì dùng window.prompt — modal cho phép quick-pick + input
+    // tùy chỉnh và validate cleaner.
+    setRestrictTarget(target);
   };
 
   const handleUnrestrict = (target: AdminUser) => {
-    if (
-      !window.confirm(
-        `Bỏ giới hạn cho user "${target.username}"?`
-      )
-    ) {
-      return;
-    }
-    restrictMutation.mutate({ userId: target.id, days: 0 });
+    // Mở pop-up confirm thay vì window.confirm — đồng nhất UX với restrict.
+    setUnrestrictTarget(target);
   };
 
   if (authLoading || !currentUser) {
@@ -353,6 +349,50 @@ export default function UserManagementPage() {
         onPageChange={setPage}
         totalItems={totalItems}
         pageSize={PAGE_SIZE}
+      />
+
+      <RestrictUserModal
+        isOpen={restrictTarget !== null}
+        onClose={() => {
+          if (restrictMutation.isPending) return; // chặn đóng giữa lúc lưu
+          setRestrictTarget(null);
+        }}
+        username={restrictTarget?.username ?? ''}
+        currentRestrictedUntil={restrictTarget?.restrictedUntil ?? null}
+        onConfirm={(days) => {
+          if (!restrictTarget) return;
+          restrictMutation.mutate({ userId: restrictTarget.id, days });
+        }}
+        isSubmitting={
+          restrictMutation.isPending &&
+          restrictMutation.variables?.userId === restrictTarget?.id
+        }
+      />
+
+      <ConfirmModal
+        isOpen={unrestrictTarget !== null}
+        onClose={() => setUnrestrictTarget(null)}
+        onConfirm={() => {
+          if (!unrestrictTarget) return;
+          restrictMutation.mutate({ userId: unrestrictTarget.id, days: 0 });
+        }}
+        title="Mở khóa user"
+        icon="✓"
+        variant="success"
+        confirmLabel="Mở khóa"
+        description={
+          unrestrictTarget && (
+            <>
+              Bỏ giới hạn cho user <strong>@{unrestrictTarget.username}</strong>?
+              Sau khi mở khóa, user có thể tạo và đăng ký giải đấu lại như bình
+              thường.
+            </>
+          )
+        }
+        isSubmitting={
+          restrictMutation.isPending &&
+          restrictMutation.variables?.userId === unrestrictTarget?.id
+        }
       />
     </div>
   );

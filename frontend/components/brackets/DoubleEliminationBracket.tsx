@@ -84,6 +84,10 @@ interface DoubleEliminationBracketProps {
   // Ngày bắt đầu giải đấu (ISO string). Khi truyền vào, người chơi không được
   // chấm thắng-thua trước ngày này — đồng bộ với hành vi các thể thức khác.
   startDate?: string;
+  // Thứ tự ô slot do người dùng chỉ định qua randomizer. Mỗi phần tử là 1 team
+  // object {id, name} đã được resolve sẵn (kể cả placeholder "Đội đi tiếp #i"
+  // cho vòng sau). Xem chú thích chi tiết ở SingleEliminationBracketProps.
+  manualSeeding?: Participant[];
 }
 
 // =====================================================
@@ -186,9 +190,12 @@ function getWBMatchName(teamsInRound: number, idx: number, total: number, isWBFi
 //           · Minor (nếu >1 winner): ghép winner LB của major round.
 //       - Vòng cuối cùng của LB = "CK Nhánh thua".
 //   • GF: winner(WBF) vs winner(LBF). Không thêm reset bracket — giữ đơn giản.
+// useDirectOrder: khi true, không apply seedOrder cho WB R1 → giữ nguyên thứ tự
+// teamSlots để cặp ghép tuần tự theo pair-list mà randomizer trả về.
 function buildDoubleElimDefs(
   inputCount: number,
   teamSlots: Array<{ id: string | null; name: string; label: string }>,
+  useDirectOrder: boolean = false,
 ): MatchDef[] {
   if (inputCount < 2) return [];
 
@@ -201,7 +208,11 @@ function buildDoubleElimDefs(
   // Trường hợp 2 đội: degenerate, chỉ có 1 trận WB là "CK Nhánh thắng".
   // Không có LB, không có GF — vì cấu trúc DE đòi hỏi >= 4 đội mới có nghĩa.
   // Vẫn render gracefully để UI không vỡ.
-  const seeds = seedOrder(bracketSize);
+  //  - useDirectOrder: giữ nguyên thứ tự teamSlots (cặp ghép theo pair-list).
+  //  - Mặc định: dùng seedOrder để xếp seed chuẩn.
+  const seeds = useDirectOrder
+    ? Array.from({ length: bracketSize }, (_, i) => i + 1)
+    : seedOrder(bracketSize);
   const slots = seeds.map((seed) => {
     const t = teamSlots[seed - 1];
     return t || { id: null, name: '', label: BYE_LABEL };
@@ -487,6 +498,7 @@ export default function DoubleEliminationBracket({
   isReadOnly = false,
   formatNames = {},
   startDate,
+  manualSeeding,
 }: DoubleEliminationBracketProps) {
   const queryClient = useQueryClient();
   // State tỉ số + BO cho từng trận (matchId -> MatchScore). Winner được suy ra
@@ -595,18 +607,21 @@ export default function DoubleEliminationBracket({
     return typeof next === 'number' && next > 0 ? next : 1;
   }, [isLastStage, advancementSteps, stageIndex]);
 
-  // ---- Sinh các slot đội ban đầu cho WB R1 ----
-  // Ưu tiên dùng đội đã đi tiếp từ vòng trước (nếu có), rồi tới participants gốc,
-  // còn thiếu thì điền bằng placeholder "Đội đi tiếp #i (vòng trước)".
+  // Xem chú thích chi tiết tương ứng trong SingleEliminationBracket.tsx.
+  const hasManualSeeding = !!manualSeeding && manualSeeding.length > 0;
+  const useDirectOrder = hasManualSeeding;
+
   const teamSlots = useMemo(() => {
     const slots: Array<{ id: string | null; name: string; label: string }> = [];
 
-    let realTeams: Participant[] = [];
-    if (qualifiedTeams && qualifiedTeams.length > 0) {
-      realTeams = qualifiedTeams;
-    } else if (isFirstStage) {
-      realTeams = participants;
-    }
+    // Chỉ điền tên đội thật khi user đã chạy randomizer (manualSeeding).
+    // CỐ Ý KHÔNG dùng qualifiedTeams ở đây: trước khi user random, bracket
+    // phải hiển thị placeholder (Chưa random / Đội đi tiếp #i) để tránh
+    // việc tự xếp cặp theo thứ tự kỹ thuật mà người tổ chức chưa xác nhận.
+    // qualifiedTeams vẫn được dùng làm pool cho randomizer ở BracketManager.
+    const realTeams: Participant[] = hasManualSeeding
+      ? (manualSeeding as Participant[])
+      : [];
 
     for (let i = 0; i < inputCount; i++) {
       const p = realTeams[i];
@@ -620,22 +635,28 @@ export default function DoubleEliminationBracket({
           name: '',
           label: `Đội đi tiếp #${i + 1} (${prevName})`,
         });
+      } else {
+        slots.push({
+          id: null,
+          name: '',
+          label: 'Chưa random',
+        });
       }
     }
     return slots;
   }, [
-    qualifiedTeams,
+    hasManualSeeding,
+    manualSeeding,
     isFirstStage,
     inputCount,
-    participants,
     formats,
     stageIndex,
     formatNames,
   ]);
 
   const matchDefs = useMemo(
-    () => buildDoubleElimDefs(inputCount, teamSlots),
-    [inputCount, teamSlots],
+    () => buildDoubleElimDefs(inputCount, teamSlots, useDirectOrder),
+    [inputCount, teamSlots, useDirectOrder],
   );
 
   const getMatchBestOf = useCallback(
@@ -1119,11 +1140,16 @@ export default function DoubleEliminationBracket({
         </div>
       </div>
 
-      {!isFirstStage && (!qualifiedTeams || qualifiedTeams.length < inputCount) && (
+      {!isFirstStage && !hasManualSeeding && (
         <div className={styles.note}>
-          ℹ️ Tên đội cụ thể sẽ được điền tự động khi vòng{' '}
+          ℹ️ Các cặp đấu sẽ được điền sau khi vòng{' '}
           <strong>{formatNames[formats[stageIndex - 1]] || formats[stageIndex - 1]}</strong>{' '}
-          kết thúc.
+          kết thúc và bạn bấm <strong>Random cặp đấu</strong>.
+        </div>
+      )}
+      {isFirstStage && !hasManualSeeding && (
+        <div className={styles.note}>
+          ℹ️ Bấm <strong>Random cặp đấu</strong> để xếp các đội vào nhánh đấu.
         </div>
       )}
 
